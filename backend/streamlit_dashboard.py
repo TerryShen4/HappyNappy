@@ -128,7 +128,7 @@ def live_dashboard():
         st.metric("⏱️ Elapsed Time", f"{int(elapsed // 60)}m {int(elapsed % 60)}s")
 
     # Chart -- re-emit the cached figure (stable key => updated in place, no flash)
-    st.markdown("### 📈 Heart Rate Trend")
+    st.markdown("### 📈 Unadjusted Heart Rate Trend")
     if fig is not None:
         st.plotly_chart(fig, use_container_width=True, key="hr_chart")
     else:
@@ -140,7 +140,7 @@ def live_dashboard():
         with col2:
             st.markdown("---")
             st.download_button(
-                label="📥 Download Heart Rate Data (CSV)",
+                label="📥 Download Unadjusted Heart Rate Data (CSV)",
                 data=csv_data,
                 file_name="happy_nappy_data.csv",
                 mime="text/csv",
