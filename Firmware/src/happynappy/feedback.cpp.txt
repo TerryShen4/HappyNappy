@@ -1,0 +1,29 @@
+FILE: feedback.cpp   (paired with feedback.h)
+BUILD: part of the "integrated" firmware (compiled via the happynappy/ folder).
+
+PURPOSE
+  Controls the two devices that physically wake the user: the vibration motor
+  and the speaker/buzzer. It owns the "vibration pattern" state so the rest of
+  the program can just say "start buzzing" and forget about the timing.
+
+WHAT'S INSIDE
+  feedbackInit()                       - sets up the motor pin and the speaker's
+                                         PWM (tone) channel. Called once at startup.
+
+  StartVibrationPattern(pattern, repeat)
+                                       - begins buzzing in one of three on/off
+                                         patterns. repeat=true keeps it looping
+                                         (used for the alarm); false plays once
+                                         (used to preview a tone).
+
+  StopVibration()                      - turns the motor off and stops the pattern.
+
+  UpdateVibration(nowMs)               - called every loop. It advances the
+                                         on/off steps of the current pattern using
+                                         the clock, so the motor pulses correctly
+                                         WITHOUT freezing the rest of the program
+                                         (no blocking delays).
+
+  (internal) VibeState                 - a small struct that remembers whether a
+                                         pattern is active, which one, which step,
+                                         and when the next on/off switch is due.

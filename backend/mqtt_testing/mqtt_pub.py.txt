@@ -1,0 +1,18 @@
+FILE: mqtt_testing/mqtt_pub.py
+ROLE: a TEST tool - a fake pillow (variant). Not part of the live system.
+
+PURPOSE
+  Same idea as mqtt/mqtt_pub.py: publishes a synthetic ~70 BPM heartbeat to the
+  broker so you can test the backend/dashboard without the physical ESP32.
+
+DIFFERENCES FROM mqtt/mqtt_pub.py
+  - Shorter window: 250 samples at 50 Hz (5 seconds) instead of 500 (10 seconds).
+  - Includes an extra "finger": true field in the JSON.
+
+WHAT IT DOES
+  Generates the fake pulse waveform, wraps it in JSON, publishes it once to
+  sensors/max30102/data, then exits.
+
+NOTE
+  These two test publishers are leftovers from development; either one can stand in
+  for the real pillow when you just want to exercise the software.

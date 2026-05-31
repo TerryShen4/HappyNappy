@@ -1,0 +1,38 @@
+FILE: integrated.cpp
+BUILD: compiled by the "integrated" PlatformIO environment.
+       >>> THIS IS THE MAIN, ACTIVE FIRMWARE - the program flashed to the pillow. <<<
+
+PURPOSE
+  Top-level orchestration. This file owns the real-time clock (RTC) and the
+  heart-rate sensor, and it wires together all the small modules in the
+  happynappy/ folder. It is intentionally short: the real work lives in the
+  modules; this file just runs the show.
+
+WHAT'S INSIDE
+  setup()   - runs once at power-on. In order it:
+                1. starts the serial (USB) log
+                2. connects WiFi + configures MQTT   (networkSetup)
+                3. starts the I2C bus
+                4. starts the OLED screen            (displayInit)
+                5. starts the motor + speaker        (feedbackInit)
+                6. starts the joystick               (inputsInit)
+                7. starts the MAX30102 heart sensor
+                8. starts the RTC and seeds a default alarm
+
+  loop()    - runs forever. Each pass it:
+                - advances the vibration pattern      (UpdateVibration)
+                - reads the joystick into a button    (pollJoystick)
+                - reads the current time from the RTC
+                - fires the scheduled alarm if it is due
+                - applies the button to the menus     (handleInput)
+                - keeps the MQTT connection alive      (networkEnsureConnected)
+                - if not told to stop, records one IR sample; once a full
+                  500-sample window is collected, publishes it              (publishSamples)
+                - redraws the active screen periodically (renderScreen)
+                - prints the time + re-checks the alarm every 5 seconds
+
+  PrintDateTime() - small helper that prints the clock to the serial log.
+
+DEPENDS ON
+  All of the happynappy/ modules (config, network, display_ui, feedback,
+  inputs, menu, app_state).

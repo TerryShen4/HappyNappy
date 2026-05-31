@@ -1,0 +1,31 @@
+FILE: sleep_tracker.py
+ROLE: the sleep-stage logic - decides WHEN to wake the user. Used by api_server.py.
+
+PURPOSE
+  Keeps the running history of heart-rate readings and watches for the drop that
+  signals the user is sinking into deeper sleep. All of that decision-making state
+  lives in one tidy object (the SleepTracker class) instead of scattered variables.
+
+WHAT'S INSIDE
+  class SleepTracker
+     - bpm_history        : the list of {time, bpm} points collected so far
+     - baseline_bpm       : the user's resting heart rate (set from the first
+                            ~60 readings)
+     - sleep_stage        : "awake" / "falling_asleep" / "deep_sleep"
+     - record_bpm(bpm)    : the main method, called for each new reading. It:
+                              1. stores the reading,
+                              2. once 60 readings exist, sets the resting baseline,
+                              3. compares new readings to the baseline:
+                                   down 10-20% -> "falling asleep"
+                                   down 20%+   -> "deep sleep" -> return a "wake"
+                                                  event for the backend to act on
+     - arm_wake()         : manually arm a wake (used by the test endpoint)
+     - current_bpm / total_readings : convenience read-outs for the web API
+
+THE IDEA (one sentence)
+  As you fall asleep your heart rate drops below your awake resting rate; a big
+  enough sustained drop is treated as entering deep sleep, which is the moment to
+  wake you so you avoid grogginess.
+
+DEPENDS ON
+  config.py (the baseline size and the drop-percentage thresholds).

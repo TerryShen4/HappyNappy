@@ -1,0 +1,28 @@
+FILE: inputs.cpp   (paired with inputs.h)
+BUILD: part of the "integrated" firmware (compiled via the happynappy/ folder).
+
+PURPOSE
+  Reads the analog joystick and turns its messy voltage readings into clean
+  directional "button" events (Up / Down / Left / Right) used to drive the menus.
+
+WHAT'S INSIDE
+  Button (enum)        - the possible events: None, Up, Down, Left, Right (A-D
+                         exist but are unused). Defined in inputs.h.
+
+  inputsInit()         - configures the two joystick ADC pins and the ADC
+                         resolution. Called once at startup.
+
+  pollJoystick(nowMs)  - the main function, called every loop. It:
+                           1. takes 8 analog readings per axis and averages them
+                              (to smooth out electrical noise),
+                           2. filters out "crosstalk" - when one axis is pushed to
+                              an extreme, the other axis can falsely read high, so
+                              the code corrects that,
+                           3. converts the smoothed X/Y position into a direction,
+                           4. debounces it: only reports a press when the direction
+                              actually changes and enough time has passed.
+                         Returns the resulting Button.
+
+IMPORTANT HARDWARE NOTE
+  The joystick uses pins 32 and 35, which are on the ESP32's ADC1 block. ADC2
+  cannot be used here because ADC2 stops working whenever WiFi is turned on.

@@ -1,0 +1,483 @@
+================================================================================
+ HAPPYNAPPY - TECHNICAL MANUAL & PRESENTATION CHEATSHEET
+================================================================================
+
+Audience: the team (mechanical engineers) presenting this project. This explains
+how every software/electronics piece works, end to end, plus the story of how we
+got it running. Read top to bottom once; use Section 14 (quick reference) and
+Section 15 (likely questions) right before you present.
+
+
+================================================================================
+ 1. WHAT THE PROJECT IS (the elevator pitch)
+================================================================================
+
+HappyNappy is a nap pillow that measures your heartbeat and wakes you at a good
+moment so you don't wake up groggy. A small heart-rate sensor in the pillow feeds
+your pulse to a laptop, which analyzes the rhythm in real time, decides when you
+are drifting into deeper sleep, and sends a signal back to buzz a vibration motor
+in the pillow to wake you.
+
+The clever part is entirely in HOW the data moves and gets analyzed. There is no
+big computer in the pillow - just a tiny microcontroller that samples a light
+sensor and ships the numbers over WiFi to software that does the math.
+
+
+================================================================================
+ 2. THE BIG PICTURE (system architecture)
+================================================================================
+
+    +-------------------+         WiFi / MQTT          +----------------------+
+    |   ESP32 (pillow)  |  --- "sensors/max30102/data" --->                   |
+    |                   |                              |  mosquitto  (broker)  |
+    |  - MAX30102 sensor|  <-- "esp32/wake_alert" ---  |  runs on the laptop   |
+    |  - OLED screen    |  <-- "esp32/control"     ---  |  TCP port 1883        |
+    |  - vibration motor|                              +----------+-----------+
+    |  - joystick, RTC  |                                         |
+    +-------------------+                                         | (same broker)
+                                                                  v
+                                          +-------------------------------------+
+                                          |  BACKEND  (Python, FastAPI)         |
+                                          |  - subscribes to sensor data        |
+                                          |  - HeartPy -> BPM                   |
+                                          |  - sleep-stage detection            |
+                                          |  - serves results over HTTP :8000   |
+                                          +------------------+------------------+
+                                                             | HTTP (poll /bpm_history)
+                                                             v
+                                          +-------------------------------------+
+                                          |  DASHBOARD (Streamlit) :8501        |
+                                          |  - live BPM + chart in the browser  |
+                                          +-------------------------------------+
+
+Three programs, three "languages of communication":
+  - ESP32  <-> broker : MQTT (publish/subscribe messaging over WiFi/TCP)
+  - backend <-> broker : MQTT (same broker, it is just a middleman)
+  - dashboard <-> backend : plain HTTP (the browser asks "what's the latest BPM?")
+
+Key idea: NOTHING talks to anything directly. The broker sits in the middle for
+the sensor data, and the backend exposes a simple web API for the dashboard. This
+decoupling is why the system is easy to extend (you could add a second screen, a
+phone app, etc. without touching the firmware).
+
+
+================================================================================
+ 3. THE HARDWARE (what is physically in the pillow)
+================================================================================
+
+  ESP32 dev board     The brain. A ~$5 microcontroller with built-in WiFi and two
+                      CPU cores at 240 MHz. Runs our firmware (C++). It is NOT a
+                      full computer - no operating system, just our program in a
+                      loop. Talks to peripherals over I2C and GPIO pins.
+
+  MAX30102            The heart-rate sensor. An optical "pulse oximeter" chip with
+                      a red LED, an infrared (IR) LED, and a light detector
+                      (photodiode). See Section 4 for how it senses a pulse.
+                      Connected over I2C (pins 21 = SDA, 22 = SCL).
+
+  SSD1306 OLED        128x64 monochrome screen. Shows the clock, menus, and the
+                      "ALARM!" screen. Also on the I2C bus (address 0x3C).
+
+  DS1302 RTC          Real-Time Clock chip with a coin cell. Keeps the time even
+                      when power is off, so the alarm clock works.
+
+  Joystick            Analog 2-axis stick read by the ESP32's ADC (analog-to-
+                      digital converter) on pins 32 (X) and 35 (Y). Used to
+                      navigate the on-screen menus.
+
+  Vibration motor     On GPIO 25. Buzzes to wake the user. Driven HIGH/LOW in
+                      patterns.
+
+  Speaker (buzzer)    On GPIO 26, driven by a PWM "tone" channel for alarm sounds.
+
+WHY THESE PINS MATTER (one gotcha worth knowing): the ESP32 has two ADC blocks,
+ADC1 and ADC2. ADC2 STOPS WORKING when WiFi is on. That is why the joystick uses
+pins 32 and 35 (both ADC1) - an early version used an ADC2 pin and the joystick
+went dead the moment WiFi connected.
+
+
+================================================================================
+ 4. HOW WE MEASURE A HEARTBEAT (the PPG principle)
+================================================================================
+
+The MAX30102 does PHOTOPLETHYSMOGRAPHY (PPG), a fancy word for "measuring blood
+flow with light."
+
+  - The IR LED shines infrared light into your finger.
+  - Some light is absorbed by blood; the rest reflects back to the photodiode.
+  - Every time your heart beats, a pulse of blood pushes into the finger, which
+    changes how much light is absorbed.
+  - So the reflected-light reading rises and falls slightly WITH EACH HEARTBEAT.
+
+The raw number the firmware reads (particleSensor.getIR()) is just "how much IR
+light came back right now." Plotted over time it looks like a wavy line with one
+bump per heartbeat. The number is large (tens of thousands) when a finger is
+present and small when it is not - which is how we detect contact (Section 7/8).
+
+Important honesty point: this is a consumer-grade optical sensor, not a medical
+ECG. The signal is noisy and motion-sensitive. Everything downstream is about
+cleaning up that wavy line and counting the bumps reliably.
+
+
+================================================================================
+ 5. THE FIRMWARE (what the ESP32 actually does)
+================================================================================
+
+The firmware is C++ built with PlatformIO (Arduino framework). After the cleanup
+it is split into small files under Firmware/src/happynappy/:
+  config.h     - all the pins, WiFi/MQTT settings, and timing constants
+  feedback.*   - vibration motor + speaker
+  inputs.*     - reads the joystick, turns it into Up/Down/Left/Right "Button"s
+  app_state.*  - the menu/alarm state (which screen, alarm time, etc.)
+  display_ui.* - draws each screen on the OLED
+  menu.*       - reacts to button presses (menu navigation)
+  network.*    - WiFi + MQTT (sending data, receiving wake commands)
+integrated.cpp - ties it together: setup() once, then loop() forever.
+
+THE SENSING LOOP (the important part for the demo):
+  - It reads the IR sensor 50 times per second (50 Hz; one sample every 20 ms).
+  - It collects 500 samples = a 10-second "window" of the pulse waveform.
+  - When a window is full, it packs the 500 numbers into a small text message
+    (JSON) and PUBLISHES it over MQTT to the topic "sensors/max30102/data".
+  - Then it starts the next window. (In practice a window takes ~13 s of real
+    time because of overhead, so a new message goes out roughly every 13 s.)
+
+The message looks like this:
+    {"ir": [20431, 20455, 20478, ... 500 numbers ...], "sample_rate": 50}
+
+The firmware does NOT compute the heart rate itself - it just ships raw samples.
+All the analysis happens on the laptop. (Microcontrollers are weak; the laptop is
+strong; and shipping raw data means we can improve the analysis without touching
+the hardware.)
+
+THE FIRMWARE ALSO: keeps the clock/alarm running, draws the menus, reads the
+joystick, and LISTENS for two commands coming back from the backend (Section 11).
+
+
+================================================================================
+ 6. MQTT (how the pieces talk)
+================================================================================
+
+MQTT is a lightweight "publish/subscribe" messaging system designed for small
+devices. Three roles:
+
+  PUBLISHER   sends a message to a named "topic" (like a radio channel).
+  SUBSCRIBER  asks to receive everything sent to a topic.
+  BROKER      the central server that routes messages from publishers to whoever
+              subscribed. Publishers and subscribers never talk directly; they
+              only ever talk to the broker.
+
+We use "mosquitto" as the broker, running on the laptop, listening on TCP port
+1883.
+
+Our topics:
+  sensors/max30102/data   ESP32 PUBLISHES pulse windows; BACKEND SUBSCRIBES.
+  esp32/wake_alert        BACKEND publishes "WAKE_UP"; ESP32 subscribes (buzz!).
+  esp32/control           BACKEND publishes "STOP_SAMPLING"; ESP32 subscribes.
+
+Why MQTT instead of, say, a web request? Because it is built for exactly this:
+many small messages, devices that come and go, low overhead, and easy one-to-many
+delivery. It also decouples everyone - the ESP32 doesn't need to know the backend
+exists, only the broker's address.
+
+"QoS 0" (which we use) means "fire and forget" - the broker delivers the message
+to current subscribers once, with no re-send guarantee. Fine for a stream of
+pulse data where the next window is seconds away anyway.
+
+
+================================================================================
+ 7. THE BACKEND (FastAPI + the analysis pipeline)
+================================================================================
+
+The backend is Python. It does two jobs at once:
+  (a) it is an MQTT client (using the "fastapi-mqtt" library) that receives sensor
+      windows and analyzes them, and
+  (b) it is a small web server (using "FastAPI" + "uvicorn") that the dashboard
+      can query over HTTP.
+
+After the cleanup it is split into:
+  config.py        - constants (broker address, topics, thresholds) + a fix that
+                     forces UTF-8 console output (see the debugging story)
+  processing.py    - pure functions: a raw IR window -> a BPM number (uses HeartPy)
+  sleep_tracker.py - the SleepTracker class: stores BPM history, computes a resting
+                     baseline, and decides when to wake the sleeper
+  api_server.py    - the glue: receive MQTT message -> process -> store -> maybe
+                     send a wake alert; plus the HTTP endpoints
+
+WHAT HAPPENS WHEN A WINDOW ARRIVES (on_message):
+  1. Parse the JSON, pull out the 500 IR samples and the sample rate.
+  2. CONTACT CHECK: average the IR values. If the average is below 900, the finger
+     isn't really on the sensor, so skip analysis ("Poor contact").
+  3. Otherwise, hand the samples to HeartPy to get a BPM (Section 8).
+  4. Store the BPM (with a timestamp) in the history list.
+  5. Run sleep-stage detection (Section 9). If it decides to wake the user, publish
+     the wake commands back to the ESP32.
+
+THE HTTP ENDPOINTS (what the dashboard / you can ask for):
+  GET  /              status: is data flowing? how many packets? current stage?
+  GET  /bpm_history   the list of {time, bpm} points + current BPM (dashboard uses)
+  POST /wake_alert    MANUAL trigger - fire the wake alert now (great for the demo)
+  GET  /awake_status  whether a wake alert has been triggered
+
+
+================================================================================
+ 8. HEARTPY (turning a wavy line into a number)
+================================================================================
+
+HeartPy ("Heart rate analysis toolkit for Python") is the library that converts
+the messy 500-sample pulse waveform into a clean beats-per-minute value. Two steps
+in our code:
+
+  1. BANDPASS FILTER:
+        hp.filter_signal(ir, cutoff=[0.7, 3.5], sample_rate=50, filtertype='bandpass')
+     This throws away everything that isn't in the frequency band of a human pulse.
+     0.7 Hz to 3.5 Hz corresponds to about 42 to 210 beats per minute. It removes
+     slow drift (e.g. the finger pressing harder over time) and fast electrical
+     noise, leaving a clean wave.
+
+  2. PEAK DETECTION + BPM:
+        wd, m = hp.process(filtered, sample_rate=50, high_precision=True, clean_rr=True)
+        bpm = m['bpm']
+     HeartPy finds the peaks (one per heartbeat), measures the time between
+     consecutive peaks (the "RR interval" or "inter-beat interval"), and converts
+     that spacing into a heart rate. clean_rr=True throws out impossible intervals
+     caused by noise.
+
+WHY 50 Hz MATTERS: to know WHERE a peak is in time, you need enough samples around
+it. 50 samples/second gives a peak position to within ~20 ms, which is good enough
+for BPM. (For more advanced "heart rate variability" analysis you would want a
+faster sample rate - this is one of the project's future-improvement points.)
+
+Terms a judge might ask about:
+  PPG  = the optical pulse signal (Section 4).
+  RR / IBI interval = the time gap between two heartbeats.
+  HRV (heart rate variability) = how much those gaps vary; a window into the
+       nervous system and, with more work, into sleep stage.
+
+
+================================================================================
+ 9. SLEEP-STAGE DETECTION (the decision to wake you)
+================================================================================
+
+The biological idea: as you fall asleep and go deeper, your heart rate generally
+DROPS below your awake resting rate. We use that drop as a proxy for "getting into
+deeper sleep."
+
+The algorithm (in sleep_tracker.py) is deliberately simple and explainable:
+  1. BASELINE: average the first 60 valid BPM readings into a "resting baseline."
+     (60 readings is roughly 13 minutes of wear.)
+  2. WATCH FOR A DROP relative to that baseline:
+       - BPM down 10-20%  -> "falling asleep"
+       - BPM down 20%+    -> "deep sleep" -> WAKE THE USER NOW
+  3. To wake: publish "WAKE_UP" on esp32/wake_alert (buzz) and "STOP_SAMPLING" on
+     esp32/control (the pillow stops streaming once you're awake).
+
+DEMO REALITY CHECK (be honest about this in the talk): the baseline needs ~13
+minutes, so the automatic wake won't fire during a short demo. That is exactly
+why there is a manual trigger (POST /wake_alert) - use it to show the buzz on cue.
+
+HONEST SCIENCE NOTE (good to volunteer; it shows depth):
+  - Real sleep staging from heart rate is an active research area and is only
+    moderately accurate, even for commercial wearables (which also use motion).
+  - In a SHORT NAP you usually never reach REM sleep at all - REM is ~70+ minutes
+    in. The grogginess from naps mostly comes from being woken out of DEEP
+    (slow-wave) sleep. So "wake before deep sleep" (what we detect) is actually
+    the right target for a nap, even though the broader pitch mentions REM.
+  - Our heart-rate-drop heuristic is a reasonable, transparent first version; a
+    future version would use HRV features and a trained model.
+
+
+================================================================================
+ 10. THE DASHBOARD (Streamlit)
+================================================================================
+
+Streamlit is a Python library that turns a script into a web app - no HTML/JS
+needed. Our dashboard (streamlit_dashboard.py) every 2 seconds asks the backend
+"GET /bpm_history" and redraws the Current BPM, total readings, elapsed time, and
+the heart-rate chart (drawn with Plotly).
+
+One engineering detail worth mentioning: new data only arrives every ~13 seconds,
+so we only rebuild the chart when the reading count actually changes, and we use a
+Streamlit "fragment" so only the data panel refreshes (not the whole page). This
+stopped the graph from flickering. (See the debugging story.)
+
+
+================================================================================
+ 11. THE WAKE LOOP (closing the circle back to the pillow)
+================================================================================
+
+This is the part that makes it a SYSTEM and not just a monitor:
+
+  backend decides to wake you
+     -> publishes "WAKE_UP"      to esp32/wake_alert
+     -> publishes "STOP_SAMPLING" to esp32/control
+  ESP32 (subscribed to both) receives them in its mqttCallback():
+     -> "WAKE_UP"       -> buzzMotor(): switch the OLED to the ALARM screen and
+                           start the vibration pattern
+     -> "STOP_SAMPLING" -> set a flag so the loop stops collecting/publishing data
+
+So data flows up (pillow -> laptop) AND commands flow down (laptop -> pillow). The
+manual demo trigger (POST /wake_alert) injects the exact same "WAKE_UP" message.
+
+
+================================================================================
+ 12. END-TO-END: FOLLOW ONE HEARTBEAT THROUGH THE WHOLE SYSTEM
+================================================================================
+
+  1. Blood pulses in your finger; the MAX30102 sees less reflected IR light.
+  2. The ESP32 records that as one of 500 samples in the current 10-second window.
+  3. Window full -> ESP32 publishes {"ir":[...500...],"sample_rate":50} to the
+     topic sensors/max30102/data.
+  4. The mosquitto broker (laptop:1883) receives it and forwards it to the backend,
+     which is subscribed to that topic.
+  5. Backend checks contact (avg IR >= 900), then HeartPy filters the wave and
+     counts the beats -> e.g. 72.4 BPM.
+  6. Backend stores {time, bpm} and checks it against the resting baseline.
+  7. Dashboard polls GET /bpm_history every 2 s and the new point appears on the
+     chart; "Current BPM" reads 72.4.
+  8. If the baseline says you've dropped into deep sleep (or you POST /wake_alert),
+     the backend publishes WAKE_UP -> the broker -> the ESP32 -> the motor buzzes.
+
+
+================================================================================
+ 13. THE DEBUGGING STORY (how we actually got it running - your narrative)
+================================================================================
+
+This is a great "engineering process" story to tell. Each problem was a different
+layer of the system, and the symptoms were misleading - which is the fun part.
+
+PROBLEM 1: "The OLED screen is blank."
+  Symptom: after changing WiFi networks, the pillow's screen showed nothing.
+  Root cause: in setup(), the code connects to WiFi in a loop that BLOCKS until it
+  succeeds - and that loop runs BEFORE the screen is initialized. With the wrong
+  WiFi password it waited forever and never reached the "turn on the screen" line.
+  Fix: corrected the WiFi name/password. Lesson: a blank screen wasn't a screen
+  problem at all - it was the network blocking startup.
+
+PROBLEM 2: "The pillow connects to WiFi but the backend receives nothing."
+  Two separate causes, found by testing each link in the chain:
+   (a) The broker (mosquitto) was only listening on "localhost" (the laptop
+       talking to itself), not on the WiFi network, so the pillow could not reach
+       it. Fix: configure mosquitto to listen on 0.0.0.0 (all network interfaces)
+       and restart it.
+   (b) The broker's address was hardcoded to an OLD network's IP. On the new WiFi
+       the laptop had a different IP, so the pillow was knocking on the wrong door.
+       Fix: update kMqttHost in the firmware to the laptop's new IP and re-flash.
+
+PROBLEM 3 (the sneaky one): "Broker has the data, but the backend still gets zero."
+  Symptom: a direct test subscriber could see the pillow's messages on the broker,
+  yet the backend's packet count stayed at 0.
+  Root cause: the backend connected to the broker fine, but the very first line of
+  its "on connect" handler was a print() containing an EMOJI. On Windows the
+  console uses an old text encoding (cp1252) that cannot print emoji, so that
+  print CRASHED the handler - BEFORE it reached the line that SUBSCRIBES to the
+  data topic. Connected but never subscribed = receives nothing.
+  Fix: force the program's output to UTF-8 so emoji can't crash it. (We later
+  removed the emojis entirely.) Lesson: a logging line that was supposed to say
+  "success" was the thing breaking success.
+
+PROBLEM 4: "The dashboard graph keeps flashing."
+  Cause: the dashboard re-ran the ENTIRE page every 2 seconds, tearing down and
+  rebuilding the chart each time.
+  Fix: use a Streamlit "fragment" that refreshes only the data panel, give the
+  chart a stable identity so it updates in place, and only rebuild it when the
+  data actually changed (new data only comes every ~13 s anyway).
+
+CLEANUP PASSES (good to mention as "we made it maintainable"):
+  - Split the ~250-line backend file and the ~1000-line firmware file into small,
+    single-purpose modules (config / processing / sleep logic / display / network).
+  - Verified the firmware refactor compiled to an essentially identical binary -
+    proof we reorganized without changing behavior.
+  - Removed all the debug emojis from the code so logs are plain ASCII.
+
+THE MORAL FOR THE TALK: every bug was in a DIFFERENT layer (firmware startup,
+network config, broker binding, text encoding, UI rendering), and the symptom
+almost never pointed at the real cause. We debugged by testing each link in the
+chain in isolation until we found the break.
+
+
+================================================================================
+ 14. QUICK REFERENCE (numbers, names, commands to know cold)
+================================================================================
+
+KEY NUMBERS
+  Sampling rate ............ 50 Hz (one IR sample every 20 ms)
+  Window size .............. 500 samples = 10 s of data (~13 s real time per send)
+  Contact threshold ........ average IR >= 900 means a finger is present
+  Bandpass filter band ..... 0.7-3.5 Hz (about 42-210 BPM)
+  Baseline ................. first 60 valid BPM readings (~13 min)
+  "Falling asleep" ......... BPM down 10-20% from baseline
+  "Deep sleep" (wake!) ..... BPM down 20%+ from baseline
+
+PORTS
+  1883 ... mosquitto MQTT broker
+  8000 ... backend (FastAPI) HTTP API
+  8501 ... Streamlit dashboard
+
+MQTT TOPICS
+  sensors/max30102/data ... pillow -> backend (pulse windows)
+  esp32/wake_alert ........ backend -> pillow ("WAKE_UP")
+  esp32/control ........... backend -> pillow ("STOP_SAMPLING")
+
+WHO DOES WHAT
+  ESP32 firmware (C++) ..... sample the sensor, ship raw data, run clock/menu/motor
+  mosquitto (broker) ....... routes MQTT messages between pillow and backend
+  backend (Python/FastAPI) . HeartPy analysis + sleep logic + HTTP API
+  HeartPy (library) ........ filters the wave and computes BPM
+  dashboard (Streamlit) .... shows live BPM + chart in a browser
+
+KEY FILES
+  Firmware/src/happynappy/config.h ... WiFi name/password + broker IP (edit here)
+  Firmware/src/integrated.cpp ........ firmware main loop
+  backend/api_server.py .............. backend entry point
+  backend/sleep_tracker.py ........... the wake-detection logic
+  backend/streamlit_dashboard.py ..... the dashboard
+
+ONE-LINE TECH SUMMARY (say this if asked "how does it work?"):
+  "An ESP32 in the pillow samples an optical pulse sensor at 50 Hz and streams
+   10-second windows over MQTT to a laptop; a Python backend uses HeartPy to turn
+   each window into a heart rate, watches for the drop that signals deeper sleep,
+   and sends a wake command back to buzz the pillow - all shown live on a
+   Streamlit dashboard."
+
+
+================================================================================
+ 15. LIKELY QUESTIONS & SOLID ANSWERS
+================================================================================
+
+Q: Why send raw data to a laptop instead of computing the heart rate on the chip?
+A: The ESP32 is a tiny microcontroller; heavy signal processing is easier, faster,
+   and more accurate in Python on a laptop. It also means we can improve the
+   analysis without re-flashing the hardware. Trade-off: it needs a network link.
+
+Q: Why MQTT and not just a normal web request?
+A: MQTT is built for streams of small messages from devices that come and go. It
+   decouples the pillow from the analysis software (they only know the broker),
+   and makes one-to-many delivery trivial.
+
+Q: How does the sensor actually detect a pulse?
+A: It shines infrared light into the finger and measures how much reflects back.
+   Each heartbeat pushes blood into the finger, changing the absorption, so the
+   reflected-light reading rises and falls once per beat.
+
+Q: How accurate is the sleep detection?
+A: Our version is a transparent heuristic - it watches for a sustained drop in
+   heart rate below your resting baseline. Real sleep staging from heart rate is
+   research-grade and only moderately accurate; a future version would add heart-
+   rate-variability features and a trained model. We're honest that for a nap the
+   real target is avoiding DEEP sleep, which is what causes nap grogginess.
+
+Q: Why does the demo use a manual button to wake instead of waiting?
+A: The automatic baseline needs ~13 minutes of data before it can detect a drop -
+   too long for a live demo - so we trigger the same wake signal manually.
+
+Q: What was the hardest bug?
+A: A "success" log message with an emoji in it crashed the backend's connect
+   handler before it could subscribe to the data - so it connected to the broker
+   but silently received nothing. The fix was forcing UTF-8 output. It taught us
+   to test each link in the chain separately. (See Section 13.)
+
+Q: What would you improve next?
+A: (1) WiFi setup without re-flashing (a phone captive portal). (2) A higher
+   sample rate + HRV features for better sleep staging. (3) A trained model using
+   real labeled sleep data. (4) On-board battery so it's fully wireless.

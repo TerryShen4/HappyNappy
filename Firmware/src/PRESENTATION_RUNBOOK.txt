@@ -1,0 +1,173 @@
+================================================================================
+ HAPPYNAPPY - PRESENTATION DAY RUNBOOK
+================================================================================
+
+A step-by-step guide to get the pillow + dashboard running for a demo.
+Assumes you are using THIS laptop (the dev machine), which already has:
+  - the mosquitto broker installed as an auto-start Windows service
+  - the firewall opened for port 1883
+  - the Python environment at Firmware\.venv
+
+
+--------------------------------------------------------------------------------
+ 0. THE ONE THING THAT CAN BREAK EVERYTHING: THE NETWORK
+--------------------------------------------------------------------------------
+
+All three parts must sit on the SAME WiFi network:
+
+    [ESP32 pillow] --WiFi--> [mosquitto broker on laptop:1883] <-- [backend + dashboard]
+
+The ESP32 firmware has HARDCODED:
+  - the WiFi name + password it joins, and
+  - the laptop's IP address where the broker lives.
+
+So ANY network change means re-editing + re-flashing the firmware. Decide your
+network BEFORE the day and configure for it in advance. Do not plan to figure
+this out at the venue.
+
+All three settings live in ONE file: Firmware/src/happynappy/config.h
+
+    static const char *kWifiSsid = "WIFI-FF44";
+    static const char *kWifiPass = "canal4165artist";
+    static const char *kMqttHost = "10.0.0.228";   // the laptop's IP on that WiFi
+
+
+--------------------------------------------------------------------------------
+ A. CHOOSE YOUR NETWORK (pick ONE, set it up in advance)
+--------------------------------------------------------------------------------
+
+OPTION 1 - BRING THE ROUTER  (RECOMMENDED, zero reconfiguration)
+   Everything is already set for WIFI-FF44 / broker 10.0.0.228. Day-of you just
+   power on and start the services (Section C). Lowest risk. The router is small.
+
+OPTION 2 - PHONE HOTSPOT  (portable, but needs a one-time reflash)
+   Your phone becomes the WiFi network. Requires the one-time setup in Section B.
+   Watch out for:
+     - AP / client isolation: some carriers stop hotspot devices from talking to
+       each other. If the ESP32 connects but the broker is unreachable, this is
+       why. Android is usually fine; some iPhone/carrier combos are not. TEST IT.
+     - The laptop's IP is handed out by DHCP. Usually stable for the same laptop,
+       but re-check it at the venue (Section E) before you panic.
+
+OPTION 3 - LAPTOP AS THE HOTSPOT  (no router, no phone; if your laptop supports it)
+   Windows Settings -> Network & Internet -> Mobile hotspot. The laptop's IP on its
+   own hotspot is a fixed 192.168.137.1 (predictable). Catch: Windows sometimes
+   refuses to start a hotspot without an internet connection to share. Test early.
+
+BOTTOM LINE: Option 1 if you can. Otherwise configure Option 2 (or 3) AT HOME and
+leave the firmware flashed for it, so the day-of steps are just "power on + start".
+
+
+--------------------------------------------------------------------------------
+ B. ONE-TIME RECONFIGURATION (only if NOT using the router)
+--------------------------------------------------------------------------------
+
+Do this at home, on the network you will actually present on.
+
+  1. Connect the LAPTOP to your chosen WiFi (phone hotspot / laptop hotspot).
+
+  2. Find the laptop's IP on that network (PowerShell):
+        ipconfig
+     Look under the Wi-Fi adapter for IPv4 Address (e.g. 192.168.43.5).
+
+  3. Edit Firmware/src/happynappy/config.h - set all three:
+        static const char *kWifiSsid = "YOUR_HOTSPOT_NAME";
+        static const char *kWifiPass = "YOUR_HOTSPOT_PASSWORD";
+        static const char *kMqttHost = "192.168.43.5";   // the IPv4 from step 2
+
+  4. Re-flash the ESP32 (USB plugged in; COM port from Device Manager ->
+     Ports (COM & LPT) -> "Silicon Labs CP210x", here assumed COM3):
+        & "C:\Users\shent\.platformio\penv\Scripts\platformio.exe" run -e integrated -t upload --upload-port COM3 -d "C:\Users\shent\Documents\GitHub\HackTheCoast2026\Firmware"
+
+  5. Run Section C and confirm a finger on the sensor shows a BPM on the dashboard.
+     If it works at home, it will work on the day (same network).
+
+
+--------------------------------------------------------------------------------
+ C. DAY-OF STARTUP CHECKLIST
+--------------------------------------------------------------------------------
+
+  1. Power on the laptop and connect it to the presentation WiFi.
+
+  2. Confirm the broker is listening (PowerShell):
+        Get-NetTCPConnection -LocalPort 1883 -State Listen
+     You want a line showing 0.0.0.0 ... 1883 ... Listen. If nothing shows:
+        Start-Service mosquitto
+
+  3. Start the backend (PowerShell window #1):
+        cd C:\Users\shent\Documents\GitHub\HackTheCoast2026\backend
+        & "C:\Users\shent\Documents\GitHub\HackTheCoast2026\Firmware\.venv\Scripts\python.exe" -m uvicorn api_server:app --host 0.0.0.0 --port 8000
+     Leave it open. You should see "Connected to MQTT Broker!".
+
+  4. Start the dashboard (PowerShell window #2):
+        cd C:\Users\shent\Documents\GitHub\HackTheCoast2026\backend
+        & "C:\Users\shent\Documents\GitHub\HackTheCoast2026\Firmware\.venv\Scripts\streamlit.exe" run streamlit_dashboard.py --server.port 8501 --server.headless true
+
+  5. Open the dashboard: browser -> http://localhost:8501
+
+  6. Power the ESP32 (USB power bank or laptop USB). Give it ~20 seconds to boot,
+     join WiFi, and send its first window.
+
+  7. Put a finger firmly on the sensor. Within ~15 seconds the "Current BPM"
+     should update and the chart should start plotting.
+
+
+--------------------------------------------------------------------------------
+ D. DEMO SCRIPT (what to actually show)
+--------------------------------------------------------------------------------
+
+  - LIVE VITALS: finger on the sensor -> BPM appears and the chart grows.
+  - THE DEVICE: the OLED shows a clock; the joystick navigates the menus
+    (alarm settings, tones, etc.).
+  - THE WAKE-UP: the automatic "deep sleep" detection needs a ~13-minute baseline,
+    too long for a live demo. Trigger the wake manually to show the pillow buzzing
+    and the OLED alarm screen (PowerShell):
+        Invoke-RestMethod -Method Post http://localhost:8000/wake_alert
+    Explain that in real use this fires automatically when it detects you
+    approaching deep sleep.
+
+
+--------------------------------------------------------------------------------
+ E. TROUBLESHOOTING (fast fixes)
+--------------------------------------------------------------------------------
+
+  Dashboard says "Cannot connect to backend"
+    -> The backend window (C.3) is not running or crashed. Restart it.
+
+  Dashboard says "Waiting for heart rate data..." forever
+    -> Press your finger more firmly (weak-contact windows are ignored).
+    -> Check the backend window: is it printing "Package # ... received"?
+         - if yes but "Poor contact" -> finger/contact issue.
+         - if no packets at all -> ESP32 not reaching the broker (next item).
+
+  ESP32 connects to WiFi but no packets arrive (backend silent)
+    -> The broker IP in the firmware is wrong for this network. Re-check:
+         ipconfig
+       If it differs from kMqttHost in config.h, update it and re-flash (Sec. B).
+    -> Confirm the broker listens on all interfaces:
+         Get-NetTCPConnection -LocalPort 1883 -State Listen
+       You need 0.0.0.0:1883. (This laptop is already configured for that.)
+    -> Phone hotspot only: client isolation may be blocking it (Section A.2).
+
+  ESP32 won't connect to WiFi at all (stuck on "Connecting to WiFi....")
+    -> Wrong SSID/password in config.h, or the network is down. Re-flash with the
+       correct creds. To watch the boot log:
+         & "C:\Users\shent\.platformio\penv\Scripts\platformio.exe" device monitor -p COM3 -b 115200
+
+  Nothing works / out of time
+    -> Play the backup screen recording of a working run.
+
+
+--------------------------------------------------------------------------------
+ F. REDUCE DAY-OF RISK
+--------------------------------------------------------------------------------
+
+  - DO A FULL DRY RUN THE DAY BEFORE, on the exact network you will present on.
+  - PACK: laptop + charger, the ESP32 USB cable (data, not charge-only), a USB
+    power bank for the pillow, the router OR your phone, and a backup video.
+  - KNOW YOUR COM PORT: check Device Manager once and note the ESP32's COM number
+    in case it is not COM3.
+
+  Want to never re-flash for a new network again? The firmware could use a WiFi
+  captive-portal config (WiFiManager) so you set the WiFi from your phone at the
+  venue instead of editing/flashing code. Ask and it can be added.

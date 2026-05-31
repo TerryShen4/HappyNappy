@@ -1,0 +1,28 @@
+FILE: app_state.cpp   (paired with app_state.h)
+BUILD: part of the "integrated" firmware (compiled via the happynappy/ folder).
+
+PURPOSE
+  Holds the device's current "state" - which screen is showing, where every menu
+  cursor is, and all the alarm settings. It is the single source of truth that
+  BOTH the display module (which draws the screen) and the menu module (which
+  changes the state) share.
+
+WHAT'S INSIDE
+  Screen (enum)        - the list of possible screens: Dashboard (clock), MainMenu,
+                         ViewAlarm, SetAlarm, SetAlarmType, SystemSettingsMenu,
+                         AlarmOutput, SystemTone, TestAlarmOutput, Alert, etc.
+                         Defined in app_state.h.
+
+  state variables      - currentScreen, the various menu cursor indices, whether
+                         the alarm is enabled, the alarm's year/month/day/hour/
+                         minute, the alarm type and output mode, and a few flags.
+
+  SetAlarmFromFields()          - builds the actual alarm time from the year/month/
+                                  day/hour/minute the user has dialed in.
+
+  SetAlarmDefaultsFromNow(now)  - pre-fills the alarm to one hour from the current
+                                  time (a sensible default).
+
+  buzzMotor()                   - switches to the ALARM screen and starts the
+                                  repeating vibration. Called when a wake command
+                                  arrives from the backend (see network.cpp).

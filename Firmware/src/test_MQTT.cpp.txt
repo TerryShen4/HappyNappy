@@ -1,0 +1,22 @@
+FILE: test_MQTT.cpp
+BUILD: compiled by the "test_mqtt" PlatformIO environment.
+       A TEST/BRING-UP SKETCH - not the full product.
+
+PURPOSE
+  A stripped-down program written to prove the MQTT data path worked during
+  development. It does the core streaming job and nothing else fancy:
+    - connects to WiFi and the MQTT broker,
+    - samples the heart sensor and publishes 500-sample windows to
+      sensors/max30102/data,
+    - listens for the backend's wake/stop commands.
+
+HOW ITS WAKE BEHAVIOR DIFFERS FROM THE PRODUCT
+  Its buzzMotor() is a simpler, BLOCKING version: when a wake alert arrives it
+  shows an "ALARM! / SNOOZE" screen and vibrates in a loop until you press DOWN on
+  the joystick, then shows "Snoozed!". (The product's version uses non-blocking
+  vibration patterns and the full menu system instead.)
+
+WHY IT EXISTS
+  Used to isolate and verify the networking/sensor pipeline without the full menu
+  and alarm-clock code getting in the way. Handy for debugging the MQTT link, but
+  it is not the demo firmware - that is the "integrated" build.

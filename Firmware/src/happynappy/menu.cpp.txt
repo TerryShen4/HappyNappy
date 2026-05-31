@@ -1,0 +1,26 @@
+FILE: menu.cpp   (paired with menu.h)
+BUILD: part of the "integrated" firmware (compiled via the happynappy/ folder).
+
+PURPOSE
+  The menu "brain." It decides what each joystick press DOES on each screen -
+  navigation and actions. It is the counterpart to display_ui.cpp: display_ui
+  draws the screens, menu.cpp changes the state behind them.
+
+WHAT'S INSIDE
+  handleInput(button, now, timeValid, nowMs)
+      - one big switch over the current screen. Depending on which screen is
+        active, a button press will:
+          - move the menu cursor up/down
+          - enter a sub-menu (Right) or go back (Left)
+          - on SetAlarm: increase/decrease the highlighted date/time field and
+            step through the fields
+          - toggle the alarm on/off
+          - preview alarm tones (briefly buzzes the motor)
+          - run the "test output" screen (motor and/or speaker)
+          - on the ALARM screen: Snooze (re-arm in 5 minutes) or Dismiss
+      - It reads/updates app_state and calls the feedback functions
+        (StartVibrationPattern / StopVibration) and the speaker.
+
+NOTE
+  This module only reacts to button events; the actual drawing of each screen is
+  handled separately in display_ui.cpp.

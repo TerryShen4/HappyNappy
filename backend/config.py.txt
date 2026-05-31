@@ -1,0 +1,28 @@
+FILE: config.py
+ROLE: shared settings for the backend (imported by the other backend modules).
+
+PURPOSE
+  One place to find and change all the "knobs" so they are not scattered through
+  the code. If you need to tweak the broker address or the detection thresholds,
+  this is the file.
+
+WHAT'S INSIDE
+  MQTT settings        - broker host/port and the topic names (the sensor-data
+                         topic and the two command topics).
+
+  Signal-processing settings:
+     MIN_CONTACT_IR ...... average IR below this means no finger is on the sensor
+     BANDPASS_CUTOFF ..... the heartbeat frequency band kept by the filter
+     BANDPASS_ORDER
+
+  Sleep-detection settings:
+     BASELINE_READINGS ........ how many readings define the resting baseline (60)
+     DEEP_SLEEP_DROP_PCT ...... % heart-rate drop that means "deep sleep -> wake"
+     FALLING_ASLEEP_DROP_PCT .. % drop that means "falling asleep"
+
+  A small Windows fix:
+     It forces the program's text output to UTF-8. (Windows' default text encoding
+     can crash on certain characters; this prevents that. See the debugging story
+     in TECHNICAL_MANUAL.txt - this exact problem once stopped the backend from
+     receiving any data.) Because every backend module imports config.py, putting
+     the fix here makes it apply no matter which script is started.

@@ -1,0 +1,20 @@
+FILE: main.cpp
+BUILD: compiled by the "esp32dev" PlatformIO environment.
+       LEGACY / ALTERNATE BUILD - this is NOT the demo firmware.
+
+PURPOSE
+  The original standalone alarm clock + heart-rate monitor, with NO WiFi and NO
+  MQTT. It has the same on-device features as the product - OLED clock, joystick
+  menus, RTC alarm, vibration patterns, and a live heart-rate/SpO2 reading shown
+  directly on the screen - but it does everything locally and never talks to a
+  laptop or backend.
+
+WHY IT EXISTS
+  It was the first version, before the project added networking. It is useful as:
+    - a reference for the menu/alarm/display logic, and
+    - a "no network needed" fallback that still demonstrates the hardware.
+
+RELATION TO THE ACTIVE BUILD
+  The "integrated" firmware (integrated.cpp + the happynappy/ modules) is the
+  network-connected successor to this file. main.cpp keeps everything in one large
+  file; the integrated build splits the same kinds of logic into small modules.

@@ -1,0 +1,38 @@
+FILE: api_server.py
+ROLE: the BACKEND - the main program that runs on the laptop during a demo.
+       >>> This is the active, central backend. <<<
+RUN:  uvicorn api_server:app --host 0.0.0.0 --port 8000   (from the backend/ folder)
+
+PURPOSE
+  Does two jobs at once:
+    1. MQTT client - subscribes to the pillow's sensor data, analyzes each window
+       into a heart rate, and runs the sleep-stage detection.
+    2. Web server (FastAPI) - exposes the results over HTTP so the dashboard can
+       read them.
+  It is intentionally thin: the math lives in processing.py and sleep_tracker.py;
+  this file is the "glue" that wires MQTT + analysis + the web API together.
+
+WHAT'S INSIDE
+  on_connect()   - runs when it connects to the MQTT broker; subscribes to the
+                   topic sensors/max30102/data.
+
+  on_message()   - runs for every sensor window the pillow sends. It:
+                     1. parses the JSON (the list of IR samples + sample rate),
+                     2. checks finger contact (skip if the signal is too weak),
+                     3. calls calculate_bpm() (in processing.py) to get a BPM,
+                     4. records it in the SleepTracker,
+                     5. if the tracker says "wake," publishes the wake commands
+                        back to the pillow.
+
+  send_wake_alert()   - publishes WAKE_UP (esp32/wake_alert) and STOP_SAMPLING
+                        (esp32/control) to the pillow.
+
+  HTTP endpoints (what the dashboard / you can request):
+     GET  /              - status: is data flowing, packet count, sleep stage
+     GET  /bpm_history   - the list of {time, bpm} points (the dashboard polls this)
+     POST /wake_alert    - MANUAL wake trigger (great for the live demo)
+     GET  /awake_status  - whether a wake alert has fired
+
+DEPENDS ON
+  config.py (settings), processing.py (BPM math), sleep_tracker.py (wake logic),
+  and the fastapi / fastapi-mqtt / uvicorn libraries.

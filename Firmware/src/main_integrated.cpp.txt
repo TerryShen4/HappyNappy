@@ -1,0 +1,19 @@
+FILE: main_integrated.cpp
+BUILD: NOT referenced by any PlatformIO environment - effectively dead/legacy code.
+
+PURPOSE
+  An earlier, single-file version of the network-connected firmware. It combines
+  the alarm clock with MQTT heart-rate streaming - the same idea as integrated.cpp,
+  but written before that logic was cleaned up and split into the happynappy/
+  modules.
+
+STATUS
+  Kept for history/reference only. Because no build environment points at it, it
+  is never compiled or flashed. The ACTIVE, maintained version of this
+  functionality is:
+        integrated.cpp  +  the happynappy/ modules.
+
+  If you are reading the code to understand the product, read those instead - this
+  file may be out of date.
+
+  (Could be safely deleted to reduce confusion - it is not used anywhere.)

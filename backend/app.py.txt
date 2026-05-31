@@ -1,0 +1,25 @@
+FILE: app.py
+ROLE: a standalone, console-only version of the analysis. LEGACY/ALTERNATE - NOT
+       used in the demo (the demo uses api_server.py instead).
+
+PURPOSE
+  An early, simpler program that connects to the MQTT broker, collects heart
+  sensor samples, runs them through HeartPy, and PRINTS the heart-rate analysis to
+  the terminal. It has no web server and no dashboard.
+
+WHAT'S INSIDE
+  message_handling()  - runs for each MQTT message; buffers incoming IR samples and,
+                        once enough are collected, processes them with HeartPy and
+                        prints BPM, inter-beat interval, and variability numbers.
+  process_heart_rate() - the HeartPy call that prints the analysis.
+  main()              - connects to the broker, subscribes, and loops forever.
+
+HOW IT DIFFERS FROM api_server.py
+  - It only prints to the console; it has no web API and feeds no dashboard.
+  - It expects an OLDER message format (single IR/red values per message plus a
+    "finger" flag), not the 500-sample array the current firmware sends. So it is
+    not compatible with the current pillow firmware as-is.
+
+STATUS
+  Kept as a reference / quick console test. The maintained analysis program is
+  api_server.py.

@@ -1,0 +1,32 @@
+FILE: streamlit_dashboard.py
+ROLE: THE WEBSITE - the live dashboard you open in a browser during the demo.
+RUN:  streamlit run streamlit_dashboard.py --server.port 8501   (from backend/)
+VIEW: http://localhost:8501
+
+PURPOSE
+  Shows the heart-rate data as a live web page. It does NOT hold any data itself -
+  every couple of seconds it asks the backend for the latest numbers and redraws.
+
+WHAT'S INSIDE
+  page setup            - title, and it loads the CSS + header from dashboard_ui.py.
+
+  build_figure(df)      - builds the heart-rate line chart (using Plotly).
+
+  live_dashboard()      - the auto-refreshing part. Every 2 seconds it:
+                            1. requests http://localhost:8000/bpm_history from the
+                               backend,
+                            2. shows the metrics: Current BPM, Total Readings,
+                               Elapsed Time,
+                            3. shows the heart-rate chart,
+                            4. offers a "Download CSV" button.
+                          If the backend isn't reachable, it shows the red error
+                          banner instead.
+
+A PERFORMANCE DETAIL (worth knowing)
+  New data only arrives about every 13 seconds, so the chart is only rebuilt when
+  the number of readings actually changes, and only the data panel refreshes (not
+  the whole page). This is what stopped the graph from flickering.
+
+DEPENDS ON
+  dashboard_ui.py (styling), the backend running on port 8000, and the streamlit /
+  requests / pandas / plotly libraries.

@@ -1,0 +1,28 @@
+FILE: processing.py
+ROLE: the signal-processing math - turns a raw window of sensor samples into a
+       heart rate. Used by api_server.py.
+
+PURPOSE
+  Holds the pure "number in, number out" functions, with no networking and no
+  saved state. Keeping the math separate makes it easy to read and to test on its
+  own.
+
+WHAT'S INSIDE
+  average_ir(ir_data)      - the mean of an IR window; used as a quick measure of
+                             how strong the signal is.
+
+  has_good_contact(ir_data) - True if the average IR is high enough that a finger
+                             is really on the sensor (otherwise the window is
+                             ignored).
+
+  calculate_bpm(ir_data, sample_rate)
+                           - the core function. It uses the HeartPy library to:
+                               1. band-pass filter the wave (keep only heartbeat
+                                  frequencies, remove drift and noise),
+                               2. find the beats and measure the time between them,
+                               3. convert that into beats per minute.
+                             Returns the BPM (rounded), or None if the signal can't
+                             be turned into a valid number.
+
+DEPENDS ON
+  config.py (the filter/contact settings) and the HeartPy library.

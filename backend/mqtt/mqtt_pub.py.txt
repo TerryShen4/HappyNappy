@@ -1,0 +1,22 @@
+FILE: mqtt/mqtt_pub.py
+ROLE: a TEST tool - a fake pillow. Not part of the live system.
+
+PURPOSE
+  Lets you test the backend + dashboard WITHOUT the physical ESP32. It generates a
+  realistic fake heartbeat signal and publishes it to the broker exactly like the
+  real pillow would, so you can verify the whole software pipeline on its own.
+
+WHAT IT DOES
+  - Builds a synthetic PPG (pulse) waveform for ~70 BPM using sine waves plus a bit
+    of random noise, 500 samples at 50 Hz (10 seconds) - matching the real firmware.
+  - Wraps it in the same JSON format, {"ir":[...500...],"sample_rate":50}.
+  - Publishes it once to the topic sensors/max30102/data, then exits.
+
+HOW TO USE
+  Start the broker + backend + dashboard, then run this script. One fake window
+  will flow through the system and appear on the dashboard. Run it repeatedly to
+  feed more data.
+
+NOTE
+  There is a near-identical copy under mqtt_testing/ that sends a shorter 5-second
+  window (and includes an extra "finger" field).

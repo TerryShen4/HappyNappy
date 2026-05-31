@@ -1,0 +1,19 @@
+FILE: mqtt_testing/mqtt_sub.py
+ROLE: a TEST tool - a "listener" that prints raw MQTT messages. Not part of the
+       live system.
+
+PURPOSE
+  A tiny debugging helper. It connects to the broker, subscribes to the pillow's
+  data topic, and prints whatever messages arrive. Use it to confirm the pillow
+  (or a fake publisher) is actually sending data to the broker.
+
+WHAT IT DOES
+  - Connects to the broker (localhost:1883).
+  - Subscribes to sensors/max30102/data.
+  - Prints each incoming message's topic and contents until you press CTRL+C.
+
+WHY IT'S USEFUL
+  It checks ONE link in the chain in isolation: "is data reaching the broker?" This
+  is exactly the kind of test that, during development, proved the pillow was
+  publishing fine and pointed the blame at the backend instead (see the debugging
+  story in TECHNICAL_MANUAL.txt).

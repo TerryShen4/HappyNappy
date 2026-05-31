@@ -1,0 +1,29 @@
+FILE: display_ui.cpp   (paired with display_ui.h)
+BUILD: part of the "integrated" firmware (compiled via the happynappy/ folder).
+
+PURPOSE
+  Everything that gets drawn on the little OLED screen. It owns the display
+  object. This module only DRAWS - it never changes what the device is doing
+  (that is the menu module's job). It reads the current state from app_state and
+  paints the matching screen.
+
+WHAT'S INSIDE
+  displayInit()                         - starts the SSD1306 OLED and shows a brief
+                                          "Initializing..." splash. Called once at
+                                          startup.
+
+  renderScreen(now, nowMs, timeValid)   - the main drawing function, called on a
+                                          timer. It looks at which Screen is active
+                                          and draws it:
+                                            - Dashboard: the big clock + date
+                                            - MainMenu / SystemSettings / etc.: the
+                                              menu lists with a ">" cursor
+                                            - SetAlarm: the editable date/time with
+                                              a blinking highlight on the field
+                                              being changed
+                                            - Alert: the "ALARM!" + Snooze/Dismiss
+                                              screen
+                                          Then it pushes the image to the panel.
+
+  (internal) DrawCenteredText()         - helper that horizontally centers a line
+                                          of text on the screen.
