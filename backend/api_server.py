@@ -1,3 +1,4 @@
+import sys
 import json
 import math
 from datetime import datetime
@@ -5,6 +6,15 @@ import numpy as np
 import heartpy as hp
 from fastapi import FastAPI
 from fastapi_mqtt import FastMQTT, MQTTConfig
+
+# Windows consoles default to cp1252, which raises UnicodeEncodeError when print()
+# hits the emoji in our log messages. That crash was aborting the MQTT on_connect
+# handler before it could subscribe. Force UTF-8 so logging never breaks the pipeline.
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
 
 # --- FastAPI Setup ---
 app = FastAPI(title="Sleep Tracker - Clean Start")

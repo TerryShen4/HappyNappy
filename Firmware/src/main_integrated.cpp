@@ -17,9 +17,9 @@
 using std::string;
 
 // WiFi & MQTT Configuration
-const char *kWifiSsid = "TP-LINK_26FE";
-const char *kWifiPass = "67147526";
-const char *kMqttHost = "192.168.0.102";
+const char *kWifiSsid = "WIFI-FF44";
+const char *kWifiPass = "canal4165artist";
+const char *kMqttHost = "10.0.0.228"; // WIFI-FF44 broker host (this PC)
 const uint16_t kMqttPort = 1883;
 const char *kMqttTopic = "sensors/max30102/data";
 
