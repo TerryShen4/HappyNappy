@@ -43,5 +43,5 @@ print(f"Simulating ~70 BPM heartbeat over 10 seconds")
 print(f"Sample range: [{min(fake_ir_samples)} - {max(fake_ir_samples)}]")
 
 client.publish("sensors/max30102/data", json_payload, 0)
-print("✅ Message published!")
+print("Message published!")
 client.disconnect()

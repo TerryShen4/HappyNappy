@@ -118,11 +118,11 @@ void loop() {
 
   if (sampleIndex >= kSamplesPerWindow) {
     if (publishSamples(irSamples, kSamplesPerWindow)) {
-      Serial.print("✅ Published ");
+      Serial.print("Published ");
       Serial.print(kSamplesPerWindow);
       Serial.println("-sample window successfully");
     } else {
-      Serial.println("❌ Publish FAILED");
+      Serial.println("Publish FAILED");
     }
     sampleIndex = 0;
   }

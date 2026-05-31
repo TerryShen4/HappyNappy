@@ -48,7 +48,7 @@ class SleepTracker:
         if self.awake and not self._demo_triggered:
             self._demo_triggered = True
             self.sleep_stage = "demo_mode"
-            print("🎯 DEMO MODE: triggering wake alert!")
+            print("DEMO MODE: triggering wake alert!")
             events.append("wake")
 
         # Establish the resting baseline from the first N readings.
@@ -59,7 +59,7 @@ class SleepTracker:
             )
             threshold = self.baseline_bpm * (1 - DEEP_SLEEP_DROP_PCT / 100)
             print(
-                f"✅ Baseline BPM established: {self.baseline_bpm:.2f} "
+                f"Baseline BPM established: {self.baseline_bpm:.2f} "
                 f"(wake if BPM drops below {threshold:.2f})"
             )
 
@@ -70,13 +70,13 @@ class SleepTracker:
                 self.awake = True
                 self.sleep_stage = "deep_sleep"
                 print(
-                    f"🚨 DEEP SLEEP DETECTED! baseline {self.baseline_bpm:.1f} -> "
+                    f"DEEP SLEEP DETECTED! baseline {self.baseline_bpm:.1f} -> "
                     f"{bpm:.1f} BPM ({drop_pct:.1f}% drop)"
                 )
                 events.append("wake")
             elif drop_pct >= FALLING_ASLEEP_DROP_PCT and self.sleep_stage != "falling_asleep":
                 self.sleep_stage = "falling_asleep"
-                print(f"😴 Falling asleep... (BPM dropped {drop_pct:.1f}%)")
+                print(f"Falling asleep... (BPM dropped {drop_pct:.1f}%)")
 
         return events
 

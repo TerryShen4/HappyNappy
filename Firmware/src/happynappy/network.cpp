@@ -15,7 +15,7 @@ WiFiClient wifiClient;
 PubSubClient mqttClient(wifiClient);
 
 void mqttCallback(char *topic, byte *payload, unsigned int length) {
-  Serial.print("\n🚨 Received message on topic: ");
+  Serial.print("\nReceived message on topic: ");
   Serial.println(topic);
 
   String message = "";
@@ -28,13 +28,13 @@ void mqttCallback(char *topic, byte *payload, unsigned int length) {
 
   if (String(topic) == "esp32/wake_alert") {
     Serial.println("\n=====================================");
-    Serial.println("🚨 WAKE UP ALERT! 🚨");
+    Serial.println("WAKE UP ALERT! ");
     Serial.println("=====================================");
     buzzMotor();  // Activate vibration motor
   } else if (String(topic) == "esp32/control") {
     if (message == "STOP_SAMPLING") {
       stopSampling = true;
-      Serial.println("🛑 Received STOP command - stopping data collection");
+      Serial.println("Received STOP command - stopping data collection");
     }
   }
 }
@@ -66,7 +66,7 @@ void networkEnsureConnected() {
         Serial.println("MQTT connected");
         mqttClient.subscribe("esp32/wake_alert");
         mqttClient.subscribe("esp32/control");
-        Serial.println("🔔 Subscribed to wake alerts and control messages");
+        Serial.println("Subscribed to wake alerts and control messages");
       } else {
         Serial.print("MQTT connect failed, rc=");
         Serial.print(mqttClient.state());

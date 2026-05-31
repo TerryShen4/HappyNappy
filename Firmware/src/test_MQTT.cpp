@@ -59,7 +59,7 @@ bool isJoystickDown() {
 
 // Function to buzz vibration motor with OLED snooze display
 void buzzMotor() {
-  Serial.println("📳 Vibration motor activated!");
+  Serial.println("Vibration motor activated!");
   
   // Clear display and show SNOOZE button
   display.clearDisplay();
@@ -108,12 +108,12 @@ void buzzMotor() {
   display.clearDisplay();
   display.display();
   
-  Serial.println("📳 Alarm snoozed by user");
+  Serial.println("Alarm snoozed by user");
 }
 
 // Callback function for incoming MQTT messages
 void mqttCallback(char* topic, byte* payload, unsigned int length) {
-  Serial.print("\n🚨 Received message on topic: ");
+  Serial.print("\nReceived message on topic: ");
   Serial.println(topic);
   
   String message = "";
@@ -126,14 +126,14 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
   
   if (String(topic) == "esp32/wake_alert") {
     Serial.println("\n=====================================");
-    Serial.println("🚨 WAKE UP ALERT! 🚨");
+    Serial.println("WAKE UP ALERT! ");
     Serial.println("=====================================");
     buzzMotor();  // Activate vibration motor
   }
   else if (String(topic) == "esp32/control") {
     if (message == "STOP_SAMPLING") {
       stopSampling = true;
-      Serial.println("🛑 Received STOP command - stopping data collection");
+      Serial.println("Received STOP command - stopping data collection");
     }
   }
 }
@@ -150,14 +150,14 @@ void setup() {
   // Setup vibration motor pin
   pinMode(MOTOR_PIN, OUTPUT);
   digitalWrite(MOTOR_PIN, LOW);  // Make sure motor starts OFF
-  Serial.println("📳 Vibration motor initialized on pin 25");
+  Serial.println("Vibration motor initialized on pin 25");
   
   // Setup joystick pins
   pinMode(joystickPinX, INPUT);
   pinMode(joystickPinY, INPUT);
   analogSetAttenuation(ADC_11db);  // Full 0-3.3V range
   analogReadResolution(12);         // 12-bit resolution (0-4095)
-  Serial.println("🕹️ Joystick initialized");
+  Serial.println("Joystick initialized");
 
   WiFi.mode(WIFI_STA);
   WiFi.begin(kWifiSsid, kWifiPass);
@@ -222,7 +222,7 @@ void loop() {
         // Subscribe to wake alert topic
         mqttClient.subscribe("esp32/wake_alert");
         mqttClient.subscribe("esp32/control");
-        Serial.println("🔔 Subscribed to wake alerts and control messages");
+        Serial.println("Subscribed to wake alerts and control messages");
       } else {
         Serial.print("MQTT connect failed, rc=");
         Serial.print(mqttClient.state());
@@ -263,11 +263,11 @@ void loop() {
     bool success = mqttClient.publish(kMqttTopic, payload.c_str());
     
     if (success) {
-      Serial.print("✅ Published ");
+      Serial.print("Published ");
       Serial.print(kSamplesPerWindow);
       Serial.println("-sample window successfully");
     } else {
-      Serial.println("❌ Publish FAILED");
+      Serial.println("Publish FAILED");
     }
 
     sampleIndex = 0;

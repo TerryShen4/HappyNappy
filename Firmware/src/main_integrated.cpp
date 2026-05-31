@@ -145,7 +145,7 @@ static void StartVibrationPattern(uint8_t pattern, bool repeat);
 
 // MQTT Callback
 void mqttCallback(char* topic, byte* payload, unsigned int length) {
-  Serial.print("\n🚨 MQTT message on: ");
+  Serial.print("\nMQTT message on: ");
   Serial.println(topic);
   
   String message = "";
@@ -154,7 +154,7 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
   }
   
   if (String(topic) == "esp32/wake_alert") {
-    Serial.println("🚨 WAKE UP ALERT FROM BACKEND! 🚨");
+    Serial.println("WAKE UP ALERT FROM BACKEND! ");
     // Trigger local alarm
     alarmTriggered = true;
     currentScreen = Screen::Alert;
@@ -164,7 +164,7 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
   else if (String(topic) == "esp32/control") {
     if (message == "STOP_SAMPLING") {
       stopSampling = true;
-      Serial.println("🛑 Backend requested STOP");
+      Serial.println("Backend requested STOP");
     }
   }
 }
@@ -546,7 +546,7 @@ void loop() {
       payload += String(kSampleRateHz);
       payload += '}';
       if (mqttClient.publish(kMqttTopic, payload.c_str())) {
-        Serial.println("✅ Published 500-sample window");
+        Serial.println("Published 500-sample window");
       }
       sampleIndex = 0;
     }

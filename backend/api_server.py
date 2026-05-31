@@ -41,7 +41,7 @@ def send_wake_alert():
     """Tell the ESP32 to wake the sleeper and stop streaming samples."""
     mqtt.client.publish(config.TOPIC_WAKE_ALERT, config.MSG_WAKE_UP, qos=0)
     mqtt.client.publish(config.TOPIC_CONTROL, config.MSG_STOP_SAMPLING, qos=0)
-    print("📤 Sent WAKE_UP and STOP_SAMPLING to ESP32")
+    print("Sent WAKE_UP and STOP_SAMPLING to ESP32")
 
 
 # --- MQTT handlers ---
@@ -49,8 +49,8 @@ def send_wake_alert():
 @mqtt.on_connect()
 def on_connect(client, flags, rc, properties):
     print("=" * 60)
-    print("✅ Connected to MQTT Broker!")
-    print(f"📡 Subscribed to: {config.TOPIC_SENSOR_DATA}")
+    print("Connected to MQTT Broker!")
+    print(f"Subscribed to: {config.TOPIC_SENSOR_DATA}")
     print("=" * 60 + "\n")
     mqtt.client.subscribe(config.TOPIC_SENSOR_DATA)
 
@@ -69,37 +69,37 @@ async def on_message(client, topic, payload, qos, properties):
         sample_rate = data.get("sample_rate")
 
         if not (isinstance(ir_data, list) and ir_data):
-            print(f"📩 Package #{mqtt_status['total_packages']} received | IR: {ir_data}")
+            print(f"Package #{mqtt_status['total_packages']} received | IR: {ir_data}")
             return
 
         print(
-            f"📩 Package #{mqtt_status['total_packages']} @ {datetime.now():%H:%M:%S} "
+            f"Package #{mqtt_status['total_packages']} @ {datetime.now():%H:%M:%S} "
             f"-- {len(ir_data)} samples @ {sample_rate}Hz, IR {min(ir_data)}-{max(ir_data)}"
         )
 
         # Only analyze windows where the sensor is actually on skin.
         if not has_good_contact(ir_data):
-            print(f"   ⚠️ Poor contact (avg IR: {average_ir(ir_data):.0f}) - skipping analysis")
+            print(f"   Poor contact (avg IR: {average_ir(ir_data):.0f}) - skipping analysis")
             return
 
         try:
             bpm = calculate_bpm(ir_data, sample_rate)
         except Exception as hp_error:
-            print(f"   ⚠️ HeartPy failed: {hp_error}")
+            print(f"   HeartPy failed: {hp_error}")
             return
 
         if bpm is None:
-            print("   ⚠️ Invalid BPM value - skipping")
+            print("   Invalid BPM value - skipping")
             return
 
-        print(f"   💓 Calculated BPM: {bpm:.2f}")
+        print(f"   Calculated BPM: {bpm:.2f}")
 
         # Record the reading; the tracker logs stage changes and tells us when to wake.
         if "wake" in tracker.record_bpm(bpm):
             send_wake_alert()
 
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"Error: {e}")
 
 
 # --- HTTP endpoints (consumed by the Streamlit dashboard) ---
@@ -137,7 +137,7 @@ async def trigger_wake_alert():
         send_wake_alert()
         return {"status": "success", "message": "Wake alert sent to ESP32"}
     except Exception as e:
-        print(f"❌ Failed to send wake alert: {e}")
+        print(f"Failed to send wake alert: {e}")
         return {"status": "error", "message": str(e)}
 
 

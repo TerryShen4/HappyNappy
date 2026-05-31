@@ -5,7 +5,7 @@ import plotly.graph_objects as go
 
 from dashboard_ui import BACKEND_ERROR_HTML, CUSTOM_CSS, HEADER_HTML
 
-st.set_page_config(page_title="Happy Nappy", page_icon="😴", layout="wide")
+st.set_page_config(page_title="Happy Nappy", layout="wide")
 
 API_URL = "http://localhost:8000/bpm_history"
 
@@ -85,18 +85,18 @@ def live_dashboard():
     # Metrics (cheap to render; emitted every run so they persist)
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric("💓 Current BPM", f"{current_bpm:.1f}" if current_bpm > 0 else "---")
+        st.metric("Current BPM", f"{current_bpm:.1f}" if current_bpm > 0 else "---")
     with col2:
-        st.metric("📊 Total Readings", total_readings)
+        st.metric("Total Readings", total_readings)
     with col3:
-        st.metric("⏱️ Elapsed Time", f"{int(elapsed // 60)}m {int(elapsed % 60)}s")
+        st.metric("Elapsed Time", f"{int(elapsed // 60)}m {int(elapsed % 60)}s")
 
     # Chart -- re-emit the cached figure (stable key => updated in place, no flash)
-    st.markdown("### 📈 Unadjusted Heart Rate Trend")
+    st.markdown("### Unadjusted Heart Rate Trend")
     if fig is not None:
         st.plotly_chart(fig, use_container_width=True, key="hr_chart")
     else:
-        st.info("⏳ Waiting for heart rate data...")
+        st.info("Waiting for heart rate data...")
 
     # Download section
     if csv_data is not None:
@@ -104,7 +104,7 @@ def live_dashboard():
         with col2:
             st.markdown("---")
             st.download_button(
-                label="📥 Download Unadjusted Heart Rate Data (CSV)",
+                label="Download Unadjusted Heart Rate Data (CSV)",
                 data=csv_data,
                 file_name="happy_nappy_data.csv",
                 mime="text/csv",
