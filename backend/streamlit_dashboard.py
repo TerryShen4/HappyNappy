@@ -3,45 +3,15 @@ import requests
 import pandas as pd
 import plotly.graph_objects as go
 
+from dashboard_ui import BACKEND_ERROR_HTML, CUSTOM_CSS, HEADER_HTML
+
 st.set_page_config(page_title="Happy Nappy", page_icon="😴", layout="wide")
 
 API_URL = "http://localhost:8000/bpm_history"
 
-# Custom CSS for better styling
-st.markdown("""
-    <style>
-    .main {
-        background-color: white;
-    }
-    .stMetric {
-        background-color: #f8f9fa;
-        padding: 15px;
-        border-radius: 10px;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-        border: 1px solid #dee2e6;
-    }
-    .stMetric label {
-        color: #212529 !important;
-    }
-    .stMetric [data-testid="stMetricValue"] {
-        color: #212529 !important;
-    }
-    </style>
-""", unsafe_allow_html=True)
-
-# Header with custom styling (rendered once, outside the auto-refresh fragment)
-st.markdown("""
-    <div style='text-align: center; padding: 20px; background: white;
-                border-radius: 20px; margin-bottom: 30px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-                border: 2px solid #667eea;'>
-        <h1 style='color: #212529; font-size: 3.5em; margin: 0; font-weight: bold;'>
-            😴 Happy Nappy 💤
-        </h1>
-        <p style='color: #495057; font-size: 1.2em; margin-top: 10px;'>
-            AI-Powered Power Nap Assistant
-        </p>
-    </div>
-""", unsafe_allow_html=True)
+# Styling + header are rendered once, outside the auto-refresh fragment.
+st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
+st.markdown(HEADER_HTML, unsafe_allow_html=True)
 
 
 def build_figure(df):
@@ -85,13 +55,7 @@ def live_dashboard():
         response = requests.get(API_URL, timeout=2)
         data = response.json()
     except requests.exceptions.RequestException:
-        st.markdown("""
-            <div style='background-color: #ff6b6b; padding: 20px; border-radius: 10px;
-                        color: white; text-align: center;'>
-                <h3>❌ Cannot connect to backend</h3>
-                <p>Make sure FastAPI is running on port 8000</p>
-            </div>
-        """, unsafe_allow_html=True)
+        st.markdown(BACKEND_ERROR_HTML, unsafe_allow_html=True)
         return
 
     total_readings = data["total_readings"] if data["data"] else 0
