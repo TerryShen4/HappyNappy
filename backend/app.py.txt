@@ -1,3 +1,10 @@
+================================================================================
+ >>> NOT NEEDED FOR THE CURRENT PROJECT <<<
+ This file describes a LEGACY WiFi/MQTT part. The backend now reads the pillow
+ over Bluetooth (see api_server.py.txt). Kept for reference/history only; it is
+ NOT used by the live demo.
+================================================================================
+
 FILE: app.py
 ROLE: a standalone, console-only version of the analysis. LEGACY/ALTERNATE - NOT
        used in the demo (the demo uses api_server.py instead).

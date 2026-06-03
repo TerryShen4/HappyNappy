@@ -1,3 +1,10 @@
+================================================================================
+ >>> NOT NEEDED FOR THE CURRENT PROJECT <<<
+ This file describes a LEGACY WiFi/MQTT test tool (a fake pillow that publishes to
+ an MQTT broker). The system now uses Bluetooth and no broker, so this no longer
+ feeds the backend. Kept for reference/history only.
+================================================================================
+
 FILE: mqtt_testing/mqtt_pub.py
 ROLE: a TEST tool - a fake pillow (variant). Not part of the live system.
 

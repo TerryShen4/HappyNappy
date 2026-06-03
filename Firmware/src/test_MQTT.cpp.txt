@@ -1,3 +1,10 @@
+================================================================================
+ >>> NOT NEEDED FOR THE CURRENT PROJECT <<<
+ This file describes a LEGACY WiFi/MQTT part. The pillow now talks over Bluetooth
+ (see Firmware/src/happynappy/bluetooth.cpp.txt and backend/api_server.py.txt).
+ Kept for reference/history only; it is NOT used by the live demo.
+================================================================================
+
 FILE: test_MQTT.cpp
 BUILD: compiled by the "test_mqtt" PlatformIO environment.
        A TEST/BRING-UP SKETCH - not the full product.

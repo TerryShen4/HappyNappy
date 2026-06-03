@@ -4,111 +4,97 @@
 
 A step-by-step guide to get the pillow + dashboard running for a demo.
 Assumes you are using THIS laptop (the dev machine), which already has:
-  - the mosquitto broker installed as an auto-start Windows service
-  - the firewall opened for port 1883
-  - the Python environment at Firmware\.venv
+  - the Python environment at Firmware\.venv (backend + dashboard deps + pyserial)
+  - a working Bluetooth radio
+
+The pillow now talks over BLUETOOTH (Classic SPP). There is NO WiFi, NO router,
+and NO mosquitto broker anymore. That removes the single biggest day-of risk the
+old setup had (the network). The only one-time step is PAIRING.
 
 
 --------------------------------------------------------------------------------
- 0. THE ONE THING THAT CAN BREAK EVERYTHING: THE NETWORK
+ 0. HOW THE PIECES CONNECT
 --------------------------------------------------------------------------------
 
-All three parts must sit on the SAME WiFi network:
+    [ESP32 pillow] --Bluetooth (SPP)--> [virtual COM port] --> [backend] --> [dashboard]
 
-    [ESP32 pillow] --WiFi--> [mosquitto broker on laptop:1883] <-- [backend + dashboard]
+  - The pillow advertises itself over Bluetooth as "HappyNappy".
+  - When you PAIR it once, Windows creates a virtual COM port for it.
+  - The backend opens that COM port and reads the heart-data, exactly like it
+    used to read from the broker. Everything downstream (BPM math, sleep
+    detection, dashboard) is unchanged.
 
-The ESP32 firmware has HARDCODED:
-  - the WiFi name + password it joins, and
-  - the laptop's IP address where the broker lives.
-
-So ANY network change means re-editing + re-flashing the firmware. Decide your
-network BEFORE the day and configure for it in advance. Do not plan to figure
-this out at the venue.
-
-All three settings live in ONE file: Firmware/src/happynappy/config.h
-
-    static const char *kWifiSsid = "WIFI-FF44";
-    static const char *kWifiPass = "canal4165artist";
-    static const char *kMqttHost = "10.0.0.228";   // the laptop's IP on that WiFi
+The Bluetooth name lives in ONE place if you ever want to change it:
+    Firmware/src/happynappy/config.h
+        static const char *kBtName = "HappyNappy";
 
 
 --------------------------------------------------------------------------------
- A. CHOOSE YOUR NETWORK (pick ONE, set it up in advance)
+ A. ONE-TIME PAIRING (do this at home, once)
 --------------------------------------------------------------------------------
 
-OPTION 1 - BRING THE ROUTER  (RECOMMENDED, zero reconfiguration)
-   Everything is already set for WIFI-FF44 / broker 10.0.0.228. Day-of you just
-   power on and start the services (Section C). Lowest risk. The router is small.
+  1. Power the ESP32 (USB cable or power bank). The OLED comes up immediately -
+     it no longer waits on any network.
 
-OPTION 2 - PHONE HOTSPOT  (portable, but needs a one-time reflash)
-   Your phone becomes the WiFi network. Requires the one-time setup in Section B.
-   Watch out for:
-     - AP / client isolation: some carriers stop hotspot devices from talking to
-       each other. If the ESP32 connects but the broker is unreachable, this is
-       why. Android is usually fine; some iPhone/carrier combos are not. TEST IT.
-     - The laptop's IP is handed out by DHCP. Usually stable for the same laptop,
-       but re-check it at the venue (Section E) before you panic.
+  2. On the laptop: Settings -> Bluetooth & devices -> Add device -> Bluetooth.
+     Pick "HappyNappy". If it asks for a PIN, try 1234 or 0000 (usually it just
+     pairs with no PIN).
 
-OPTION 3 - LAPTOP AS THE HOTSPOT  (no router, no phone; if your laptop supports it)
-   Windows Settings -> Network & Internet -> Mobile hotspot. The laptop's IP on its
-   own hotspot is a fixed 192.168.137.1 (predictable). Catch: Windows sometimes
-   refuses to start a hotspot without an internet connection to share. Test early.
+  3. Find the OUTGOING COM port Windows created for it:
+        Settings -> Bluetooth & devices -> Devices -> "More Bluetooth settings"
+        -> "COM Ports" tab.
+     You will see two entries for HappyNappy. Note the one whose Direction is
+     "Outgoing" (e.g. COM5). THAT is the port the backend uses.
+     (Alternatively: Device Manager -> Ports (COM & LPT) -> "Standard Serial over
+      Bluetooth link".)
 
-BOTTOM LINE: Option 1 if you can. Otherwise configure Option 2 (or 3) AT HOME and
-leave the firmware flashed for it, so the day-of steps are just "power on + start".
+  4. Tell the backend which port to use. Either edit the default in
+     Firmware/src/happynappy/../../../backend/config.py:
+        SERIAL_PORT = os.environ.get("HAPPYNAPPY_PORT", "COM5")
+     ...changing "COM5" to your outgoing port, OR set it per-launch in the
+     backend window (Section C.2). Editing the default is the no-surprises choice.
+
+  5. Run Section C and confirm a finger on the sensor shows a BPM on the
+     dashboard. If it works at home, it works on the day - no network involved.
 
 
 --------------------------------------------------------------------------------
- B. ONE-TIME RECONFIGURATION (only if NOT using the router)
+ B. WHAT TO PACK
 --------------------------------------------------------------------------------
 
-Do this at home, on the network you will actually present on.
+  - The laptop + charger (this one - it has the env and the pairing already).
+  - The ESP32 pillow + a USB power bank (or USB cable) to power it.
+  - A backup screen recording of a working run.
 
-  1. Connect the LAPTOP to your chosen WiFi (phone hotspot / laptop hotspot).
-
-  2. Find the laptop's IP on that network (PowerShell):
-        ipconfig
-     Look under the Wi-Fi adapter for IPv4 Address (e.g. 192.168.43.5).
-
-  3. Edit Firmware/src/happynappy/config.h - set all three:
-        static const char *kWifiSsid = "YOUR_HOTSPOT_NAME";
-        static const char *kWifiPass = "YOUR_HOTSPOT_PASSWORD";
-        static const char *kMqttHost = "192.168.43.5";   // the IPv4 from step 2
-
-  4. Re-flash the ESP32 (USB plugged in; COM port from Device Manager ->
-     Ports (COM & LPT) -> "Silicon Labs CP210x", here assumed COM3):
-        & "C:\Users\shent\.platformio\penv\Scripts\platformio.exe" run -e integrated -t upload --upload-port COM3 -d "C:\Users\shent\Documents\GitHub\HackTheCoast2026\Firmware"
-
-  5. Run Section C and confirm a finger on the sensor shows a BPM on the dashboard.
-     If it works at home, it will work on the day (same network).
+  You do NOT need a router, a phone hotspot, or any network gear anymore.
+  (If you ever present from a DIFFERENT laptop, you must pair "HappyNappy" on
+   that laptop and set its outgoing COM port first - repeat Section A there.)
 
 
 --------------------------------------------------------------------------------
  C. DAY-OF STARTUP CHECKLIST
 --------------------------------------------------------------------------------
 
-  1. Power on the laptop and connect it to the presentation WiFi.
+  1. Power on the laptop. Make sure Bluetooth is ON. Power the pillow; the OLED
+     should light up. (It was already paired in Section A, so Windows will
+     reconnect automatically - no need to re-pair.)
 
-  2. Confirm the broker is listening (PowerShell):
-        Get-NetTCPConnection -LocalPort 1883 -State Listen
-     You want a line showing 0.0.0.0 ... 1883 ... Listen. If nothing shows:
-        Start-Service mosquitto
-
-  3. Start the backend (PowerShell window #1):
+  2. Start the backend (PowerShell window #1). If you already edited the default
+     port in config.py (A.4), the first line is optional:
+        $env:HAPPYNAPPY_PORT = "COM5"      # your OUTGOING HappyNappy port
         cd C:\Users\shent\Documents\GitHub\HackTheCoast2026\backend
         & "C:\Users\shent\Documents\GitHub\HackTheCoast2026\Firmware\.venv\Scripts\python.exe" -m uvicorn api_server:app --host 0.0.0.0 --port 8000
-     Leave it open. You should see "Connected to MQTT Broker!".
+     Leave it open. You should see "Bluetooth serial link open on COM5".
+     (If it says "Waiting for COM5...", the port is wrong or the pillow is off -
+      see Troubleshooting.)
 
-  4. Start the dashboard (PowerShell window #2):
+  3. Start the dashboard (PowerShell window #2):
         cd C:\Users\shent\Documents\GitHub\HackTheCoast2026\backend
         & "C:\Users\shent\Documents\GitHub\HackTheCoast2026\Firmware\.venv\Scripts\streamlit.exe" run streamlit_dashboard.py --server.port 8501 --server.headless true
 
-  5. Open the dashboard: browser -> http://localhost:8501
+  4. Open the dashboard: browser -> http://localhost:8501
 
-  6. Power the ESP32 (USB power bank or laptop USB). Give it ~20 seconds to boot,
-     join WiFi, and send its first window.
-
-  7. Put a finger firmly on the sensor. Within ~15 seconds the "Current BPM"
+  5. Put a finger firmly on the sensor. Within ~15 seconds the "Current BPM"
      should update and the chart should start plotting.
 
 
@@ -123,6 +109,7 @@ Do this at home, on the network you will actually present on.
     too long for a live demo. Trigger the wake manually to show the pillow buzzing
     and the OLED alarm screen (PowerShell):
         Invoke-RestMethod -Method Post http://localhost:8000/wake_alert
+    The command travels back over the SAME Bluetooth link to buzz the motor.
     Explain that in real use this fires automatically when it detects you
     approaching deep sleep.
 
@@ -132,27 +119,26 @@ Do this at home, on the network you will actually present on.
 --------------------------------------------------------------------------------
 
   Dashboard says "Cannot connect to backend"
-    -> The backend window (C.3) is not running or crashed. Restart it.
+    -> The backend window (C.2) is not running or crashed. Restart it.
 
-  Dashboard says "Waiting for heart rate data..." forever
+  Backend keeps printing "Waiting for COM5..." (never "link open")
+    -> The pillow is off, or asleep/unpaired. Power-cycle it and confirm the OLED
+       is on.
+    -> Wrong COM port. Re-check the OUTGOING HappyNappy port (Section A.3) and set
+       $env:HAPPYNAPPY_PORT to it, then restart the backend.
+    -> The port is already open by another program (an old backend window, or a
+       serial monitor). Close the other one - a COM port allows only one reader.
+
+  Dashboard says "Waiting for heart rate data..." forever (but link is open)
     -> Press your finger more firmly (weak-contact windows are ignored).
     -> Check the backend window: is it printing "Package # ... received"?
          - if yes but "Poor contact" -> finger/contact issue.
-         - if no packets at all -> ESP32 not reaching the broker (next item).
+         - if no packets at all -> the pillow connected but isn't sending; power-
+           cycle the pillow and watch its serial/OLED.
 
-  ESP32 connects to WiFi but no packets arrive (backend silent)
-    -> The broker IP in the firmware is wrong for this network. Re-check:
-         ipconfig
-       If it differs from kMqttHost in config.h, update it and re-flash (Sec. B).
-    -> Confirm the broker listens on all interfaces:
-         Get-NetTCPConnection -LocalPort 1883 -State Listen
-       You need 0.0.0.0:1883. (This laptop is already configured for that.)
-    -> Phone hotspot only: client isolation may be blocking it (Section A.2).
-
-  ESP32 won't connect to WiFi at all (stuck on "Connecting to WiFi....")
-    -> Wrong SSID/password in config.h, or the network is down. Re-flash with the
-       correct creds. To watch the boot log:
-         & "C:\Users\shent\.platformio\penv\Scripts\platformio.exe" device monitor -p COM3 -b 115200
+  Pairing won't take / device not found
+    -> Make sure the pillow is powered and the OLED is on (it advertises as soon
+       as it boots). Toggle the laptop's Bluetooth off/on and retry Add device.
 
   Nothing works / out of time
     -> Play the backup screen recording of a working run.
@@ -162,12 +148,8 @@ Do this at home, on the network you will actually present on.
  F. REDUCE DAY-OF RISK
 --------------------------------------------------------------------------------
 
-  - DO A FULL DRY RUN THE DAY BEFORE, on the exact network you will present on.
-  - PACK: laptop + charger, the ESP32 USB cable (data, not charge-only), a USB
-    power bank for the pillow, the router OR your phone, and a backup video.
-  - KNOW YOUR COM PORT: check Device Manager once and note the ESP32's COM number
-    in case it is not COM3.
-
-  Want to never re-flash for a new network again? The firmware could use a WiFi
-  captive-portal config (WiFiManager) so you set the WiFi from your phone at the
-  venue instead of editing/flashing code. Ask and it can be added.
+  - DO A FULL DRY RUN THE DAY BEFORE, on this exact laptop. Because there is no
+    network anymore, a dry run that works here will work at the venue.
+  - Pair ONCE at home (Section A) so the day-of steps are just "power on + start".
+  - Keep the backend's HAPPYNAPPY_PORT correct in config.py so you don't have to
+    remember it under pressure.

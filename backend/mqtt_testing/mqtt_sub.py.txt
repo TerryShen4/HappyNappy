@@ -1,3 +1,10 @@
+================================================================================
+ >>> NOT NEEDED FOR THE CURRENT PROJECT <<<
+ This file describes a LEGACY WiFi/MQTT debug tool (an MQTT listener). The system
+ now uses Bluetooth and no broker, so there is no MQTT traffic to listen to. Kept
+ for reference/history only.
+================================================================================
+
 FILE: mqtt_testing/mqtt_sub.py
 ROLE: a TEST tool - a "listener" that prints raw MQTT messages. Not part of the
        live system.

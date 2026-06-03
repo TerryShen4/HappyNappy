@@ -1,0 +1,40 @@
+FILE: happynappy/bluetooth.cpp  (with happynappy/bluetooth.h)
+ROLE: the COMMUNICATION layer - the pillow's wireless link to the laptop.
+
+PURPOSE
+  Handles everything about talking to the backend over Bluetooth Classic using
+  the Serial Port Profile (SPP). Think of SPP as a wireless serial cable: the
+  pillow "prints" lines of text and the laptop receives them (and vice-versa).
+  This replaced the old WiFi + MQTT module - no router and no broker anymore.
+
+WHAT'S INSIDE
+  bluetoothSetup()    - starts Bluetooth and makes the device discoverable under
+                        the name in config.h (kBtName = "HappyNappy"). Returns
+                        immediately; it does NOT wait for the laptop to connect, so
+                        the rest of setup() (and the OLED) comes up right away.
+
+  bluetoothPoll()     - called every loop. Reads any bytes the laptop sent,
+                        assembles them into a line (until a newline), and acts on
+                        complete commands:
+                           "WAKE_UP"       -> buzzMotor()  (start the wake buzz)
+                           "STOP_SAMPLING" -> set stopSampling = true
+
+  bluetoothHasClient()- true once a laptop has actually connected over SPP. The
+                        main loop checks this before sending, so it waits quietly
+                        instead of shouting "send failed" before you pair.
+
+  publishSamples()    - sends one full window of IR samples as a single line of
+                        JSON, {"ir":[...500...],"sample_rate":50}, ending in a
+                        newline (the newline marks where the window ends).
+
+  stopSampling (flag) - shared with integrated.cpp; once true, the loop stops
+                        collecting/sending data (the user has been woken).
+
+DEPENDS ON
+  config.h (the Bluetooth name + sample rate), app_state.h (buzzMotor), and the
+  ESP32 Arduino core's built-in BluetoothSerial library (no extra dependency).
+
+NOTE
+  The protocol (lines of JSON up, command words down) is identical to what the old
+  MQTT version used - only the transport changed - so the backend's analysis and
+  the dashboard did not have to change at all.

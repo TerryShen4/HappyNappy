@@ -4,6 +4,7 @@ Tunable constants live here so they're easy to find and adjust without
 digging through the request/processing code.
 """
 
+import os
 import sys
 
 # Windows consoles default to cp1252, which raises UnicodeEncodeError when a
@@ -16,21 +17,26 @@ try:
 except Exception:
     pass
 
-# --- MQTT broker ---
-MQTT_HOST = "localhost"
-MQTT_PORT = 1883
-MQTT_KEEPALIVE = 60
+# --- Bluetooth serial link (Classic SPP) ---
+# Pair the pillow ("HappyNappy") in Windows Bluetooth settings; Windows creates
+# an OUTGOING virtual COM port. Point the backend at it here, or override at
+# launch:  set HAPPYNAPPY_PORT=COM7   (Windows)  /  export HAPPYNAPPY_PORT=...
+SERIAL_PORT = os.environ.get("HAPPYNAPPY_PORT", "COM5")
+SERIAL_BAUD = 115200          # ignored by SPP, but pyserial requires a value
+SERIAL_RECONNECT_SEC = 3      # wait between reopen attempts if the port is gone
 
-# --- MQTT topics ---
-TOPIC_SENSOR_DATA = "sensors/max30102/data"  # ESP32 -> backend (PPG windows)
-TOPIC_WAKE_ALERT = "esp32/wake_alert"        # backend -> ESP32 (buzz/wake)
-TOPIC_CONTROL = "esp32/control"              # backend -> ESP32 (commands)
+# --- Commands sent back to the ESP32 (newline-framed lines over the link) ---
 MSG_WAKE_UP = "WAKE_UP"
 MSG_STOP_SAMPLING = "STOP_SAMPLING"
 
 # --- Signal processing ---
 MIN_CONTACT_IR = 900            # avg IR below this => finger not on the sensor
-BANDPASS_CUTOFF = [0.7, 3.5]    # Hz bandpass (~42-210 BPM) to clean the PPG
+# Bandpass to clean the PPG. The UPPER cutoff doubles as a sanity ceiling: set
+# too high (e.g. 3.5 Hz / 210 BPM) it lets the dicrotic-notch + noise above the
+# pulse get counted as extra beats, which roughly doubled the reported BPM. For a
+# resting nap pillow, 2.0 Hz (~120 BPM) keeps real heart rates and rejects that
+# high-frequency junk, so HeartPy locks onto the true beat.
+BANDPASS_CUTOFF = [0.7, 2.0]    # Hz bandpass (~42-120 BPM)
 BANDPASS_ORDER = 3
 
 # --- Sleep-stage detection ---

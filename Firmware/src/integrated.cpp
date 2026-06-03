@@ -7,7 +7,7 @@
 //   app_state.*  -- menu/alarm state + Screen enum
 //   display_ui.* -- OLED rendering
 //   menu.*       -- button handling / menu navigation
-//   network.*    -- WiFi + MQTT (publish sensor windows, receive wake alerts)
+//   bluetooth.*  -- Bluetooth SPP (stream sensor windows, receive wake alerts)
 //
 // This file owns the RTC and the heart-rate sensor, and wires everything
 // together in setup()/loop().
@@ -24,7 +24,7 @@
 #include "happynappy/feedback.h"
 #include "happynappy/inputs.h"
 #include "happynappy/menu.h"
-#include "happynappy/network.h"
+#include "happynappy/bluetooth.h"
 
 ThreeWire rtcWire(kDatPin, kClkPin, kRstPin);  // DAT, CLK, RST
 RtcDS1302<ThreeWire> rtc(rtcWire);
@@ -43,7 +43,7 @@ void setup() {
   Serial.begin(115200);
   delay(200);
 
-  networkSetup();  // WiFi + MQTT (blocks until WiFi connects)
+  bluetoothSetup();  // Bluetooth SPP (non-blocking; OLED comes up right away)
 
   Wire.begin(SDA_PIN, SCL_PIN);
 
@@ -102,27 +102,29 @@ void loop() {
 
   handleInput(button, now, timeValid, nowMs);
 
-  networkEnsureConnected();
+  bluetoothPoll();  // service incoming wake/control commands
 
   // Stop collecting/sending once the backend has triggered a wake alert.
   if (stopSampling) {
-    delay(100);  // Just keep MQTT connection alive
+    delay(100);
     return;
   }
 
-  // Collect samples for HeartPy analysis, publishing one full window at a time.
+  // Collect samples for HeartPy analysis, sending one full window at a time.
   static uint16_t sampleIndex = 0;
   static long irSamples[kSamplesPerWindow];
 
   irSamples[sampleIndex++] = particleSensor.getIR();
 
   if (sampleIndex >= kSamplesPerWindow) {
-    if (publishSamples(irSamples, kSamplesPerWindow)) {
-      Serial.print("Published ");
+    if (!bluetoothHasClient()) {
+      Serial.println("Window ready, waiting for Bluetooth connection...");
+    } else if (publishSamples(irSamples, kSamplesPerWindow)) {
+      Serial.print("Sent ");
       Serial.print(kSamplesPerWindow);
       Serial.println("-sample window successfully");
     } else {
-      Serial.println("Publish FAILED");
+      Serial.println("Send FAILED");
     }
     sampleIndex = 0;
   }

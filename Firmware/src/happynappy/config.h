@@ -14,12 +14,10 @@
 #define OLED_RESET -1
 #define SCREEN_ADDRESS 0x3C
 
-// --- WiFi / MQTT ---
-static const char *kWifiSsid = "WIFI-FF44";
-static const char *kWifiPass = "canal4165artist";
-static const char *kMqttHost = "10.0.0.228"; // WIFI-FF44 broker host (this PC)
-static const uint16_t kMqttPort = 1883;
-static const char *kMqttTopic = "sensors/max30102/data";
+// --- Bluetooth (Classic SPP) ---
+// The pillow advertises under this name; pair with it from the laptop and
+// Windows creates a virtual COM port the backend reads. No WiFi/broker/router.
+static const char *kBtName = "HappyNappy";
 
 // --- Sensor sampling ---
 static const uint16_t kSampleRateHz = 50;            // 50 Hz => 20 ms per sample
@@ -44,6 +42,6 @@ static const uint8_t kSpeakerPin = 26;
 static const uint8_t kSpeakerChannel = 0;
 static const uint16_t kSpeakerFreq = 2000;
 
-// --- Joystick (ADC1 channels; ADC2 unavailable while WiFi is active) ---
+// --- Joystick (ADC1 channels; kept on ADC1 to stay clear of the radio) ---
 static const int kJoystickPinX = 32;  // ADC1_CH4
 static const int kJoystickPinY = 35;  // ADC1_CH5

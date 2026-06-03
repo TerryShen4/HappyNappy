@@ -5,27 +5,29 @@ RUN:  uvicorn api_server:app --host 0.0.0.0 --port 8000   (from the backend/ fol
 
 PURPOSE
   Does two jobs at once:
-    1. MQTT client - subscribes to the pillow's sensor data, analyzes each window
-       into a heart rate, and runs the sleep-stage detection.
+    1. Bluetooth serial reader - on a background thread it opens the pillow's
+       virtual COM port, reads each window, analyzes it into a heart rate, and
+       runs the sleep-stage detection.
     2. Web server (FastAPI) - exposes the results over HTTP so the dashboard can
        read them.
   It is intentionally thin: the math lives in processing.py and sleep_tracker.py;
-  this file is the "glue" that wires MQTT + analysis + the web API together.
+  this file is the "glue" that wires the serial link + analysis + the web API.
 
 WHAT'S INSIDE
-  on_connect()   - runs when it connects to the MQTT broker; subscribes to the
-                   topic sensors/max30102/data.
+  serial_reader_loop() - the background thread. Opens SERIAL_PORT (retrying and
+                   logging "waiting..." if the pillow isn't paired/on yet), then
+                   reads it one line at a time and hands each line to
+                   process_window(). Reopens automatically if the link drops.
 
-  on_message()   - runs for every sensor window the pillow sends. It:
-                     1. parses the JSON (the list of IR samples + sample rate),
+  process_window() - runs for every sensor window the pillow sends. It:
+                     1. parses the JSON line (IR samples + sample rate),
                      2. checks finger contact (skip if the signal is too weak),
                      3. calls calculate_bpm() (in processing.py) to get a BPM,
                      4. records it in the SleepTracker,
-                     5. if the tracker says "wake," publishes the wake commands
+                     5. if the tracker says "wake," sends the wake commands
                         back to the pillow.
 
-  send_wake_alert()   - publishes WAKE_UP (esp32/wake_alert) and STOP_SAMPLING
-                        (esp32/control) to the pillow.
+  send_wake_alert()   - writes WAKE_UP and STOP_SAMPLING back over the serial link.
 
   HTTP endpoints (what the dashboard / you can request):
      GET  /              - status: is data flowing, packet count, sleep stage
@@ -33,6 +35,9 @@ WHAT'S INSIDE
      POST /wake_alert    - MANUAL wake trigger (great for the live demo)
      GET  /awake_status  - whether a wake alert has fired
 
+  A lock guards the shared BPM history so the reader thread and the HTTP handlers
+  never read/write it at the same time.
+
 DEPENDS ON
   config.py (settings), processing.py (BPM math), sleep_tracker.py (wake logic),
-  and the fastapi / fastapi-mqtt / uvicorn libraries.
+  and the fastapi / pyserial / uvicorn libraries.

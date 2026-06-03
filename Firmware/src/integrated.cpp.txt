@@ -11,13 +11,15 @@ PURPOSE
 WHAT'S INSIDE
   setup()   - runs once at power-on. In order it:
                 1. starts the serial (USB) log
-                2. connects WiFi + configures MQTT   (networkSetup)
+                2. starts Bluetooth (advertised as "HappyNappy")  (bluetoothSetup)
                 3. starts the I2C bus
                 4. starts the OLED screen            (displayInit)
                 5. starts the motor + speaker        (feedbackInit)
                 6. starts the joystick               (inputsInit)
                 7. starts the MAX30102 heart sensor
                 8. starts the RTC and seeds a default alarm
+              (Bluetooth start is non-blocking, so the OLED comes up right away -
+               it no longer waits on a network like the old WiFi version did.)
 
   loop()    - runs forever. Each pass it:
                 - advances the vibration pattern      (UpdateVibration)
@@ -25,14 +27,14 @@ WHAT'S INSIDE
                 - reads the current time from the RTC
                 - fires the scheduled alarm if it is due
                 - applies the button to the menus     (handleInput)
-                - keeps the MQTT connection alive      (networkEnsureConnected)
+                - services incoming wake/control commands (bluetoothPoll)
                 - if not told to stop, records one IR sample; once a full
-                  500-sample window is collected, publishes it              (publishSamples)
+                  500-sample window is collected, sends it over Bluetooth  (publishSamples)
                 - redraws the active screen periodically (renderScreen)
                 - prints the time + re-checks the alarm every 5 seconds
 
   PrintDateTime() - small helper that prints the clock to the serial log.
 
 DEPENDS ON
-  All of the happynappy/ modules (config, network, display_ui, feedback,
+  All of the happynappy/ modules (config, bluetooth, display_ui, feedback,
   inputs, menu, app_state).

@@ -3,12 +3,16 @@ ROLE: shared settings for the backend (imported by the other backend modules).
 
 PURPOSE
   One place to find and change all the "knobs" so they are not scattered through
-  the code. If you need to tweak the broker address or the detection thresholds,
-  this is the file.
+  the code. If you need to change which COM port the pillow is on, or the
+  detection thresholds, this is the file.
 
 WHAT'S INSIDE
-  MQTT settings        - broker host/port and the topic names (the sensor-data
-                         topic and the two command topics).
+  Bluetooth serial settings - SERIAL_PORT (which virtual COM port the paired
+                         pillow shows up as; defaults to the HAPPYNAPPY_PORT
+                         environment variable so you can set it at launch),
+                         SERIAL_BAUD, and the reconnect interval. Also the two
+                         command words sent back to the pillow (WAKE_UP /
+                         STOP_SAMPLING).
 
   Signal-processing settings:
      MIN_CONTACT_IR ...... average IR below this means no finger is on the sensor

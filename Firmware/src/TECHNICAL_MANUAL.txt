@@ -20,55 +20,54 @@ in the pillow to wake you.
 
 The clever part is entirely in HOW the data moves and gets analyzed. There is no
 big computer in the pillow - just a tiny microcontroller that samples a light
-sensor and ships the numbers over WiFi to software that does the math.
+sensor and ships the numbers over Bluetooth to software that does the math.
 
 
 ================================================================================
  2. THE BIG PICTURE (system architecture)
 ================================================================================
 
-    +-------------------+         WiFi / MQTT          +----------------------+
-    |   ESP32 (pillow)  |  --- "sensors/max30102/data" --->                   |
-    |                   |                              |  mosquitto  (broker)  |
-    |  - MAX30102 sensor|  <-- "esp32/wake_alert" ---  |  runs on the laptop   |
-    |  - OLED screen    |  <-- "esp32/control"     ---  |  TCP port 1883        |
-    |  - vibration motor|                              +----------+-----------+
-    |  - joystick, RTC  |                                         |
-    +-------------------+                                         | (same broker)
+    +-------------------+                              +----------------------+
+    |   ESP32 (pillow)  |  === one JSON line/window ==> |  BACKEND (Python)    |
+    |                   |       (the pulse samples)    |  - reads the COM port |
+    |  - MAX30102 sensor|                              |  - HeartPy -> BPM     |
+    |  - OLED screen    |  <== "WAKE_UP" ============  |  - sleep detection    |
+    |  - vibration motor|  <== "STOP_SAMPLING" ======  |  - HTTP API :8000     |
+    |  - joystick, RTC  |                              +----------+-----------+
+    +-------------------+                                         |
+            Bluetooth Classic (SPP) <--------------------------->/| HTTP (poll
+        appears on the laptop as a virtual COM port               | /bpm_history)
                                                                   v
-                                          +-------------------------------------+
-                                          |  BACKEND  (Python, FastAPI)         |
-                                          |  - subscribes to sensor data        |
-                                          |  - HeartPy -> BPM                   |
-                                          |  - sleep-stage detection            |
-                                          |  - serves results over HTTP :8000   |
-                                          +------------------+------------------+
-                                                             | HTTP (poll /bpm_history)
-                                                             v
                                           +-------------------------------------+
                                           |  DASHBOARD (Streamlit) :8501        |
                                           |  - live BPM + chart in the browser  |
                                           +-------------------------------------+
 
-Three programs, three "languages of communication":
-  - ESP32  <-> broker : MQTT (publish/subscribe messaging over WiFi/TCP)
-  - backend <-> broker : MQTT (same broker, it is just a middleman)
+Two links, two "languages of communication":
+  - ESP32  <-> backend : Bluetooth Classic SPP (a wireless serial cable). The
+                         pillow streams one line of text per window; the backend
+                         streams short command lines back. No broker, no router.
   - dashboard <-> backend : plain HTTP (the browser asks "what's the latest BPM?")
 
-Key idea: NOTHING talks to anything directly. The broker sits in the middle for
-the sensor data, and the backend exposes a simple web API for the dashboard. This
-decoupling is why the system is easy to extend (you could add a second screen, a
-phone app, etc. without touching the firmware).
+Key idea: the pillow and the analysis software are still decoupled by a simple
+text protocol (lines of JSON over a serial link), and the backend exposes a web
+API for the dashboard. That layering is why the system is easy to extend - you
+could add a second screen or a phone app without touching the firmware.
+
+(HISTORY: an earlier version sent the data over WiFi to an MQTT "broker"
+(mosquitto) on the laptop. We replaced that whole network path with Bluetooth to
+delete an entire class of failures - see the debugging story, Section 13.)
 
 
 ================================================================================
  3. THE HARDWARE (what is physically in the pillow)
 ================================================================================
 
-  ESP32 dev board     The brain. A ~$5 microcontroller with built-in WiFi and two
-                      CPU cores at 240 MHz. Runs our firmware (C++). It is NOT a
-                      full computer - no operating system, just our program in a
-                      loop. Talks to peripherals over I2C and GPIO pins.
+  ESP32 dev board     The brain. A ~$5 microcontroller with built-in WiFi AND
+                      Bluetooth and two CPU cores at 240 MHz. Runs our firmware
+                      (C++). It is NOT a full computer - no operating system, just
+                      our program in a loop. Talks to peripherals over I2C and GPIO
+                      pins, and to the laptop over Bluetooth.
 
   MAX30102            The heart-rate sensor. An optical "pulse oximeter" chip with
                       a red LED, an infrared (IR) LED, and a light detector
@@ -91,9 +90,10 @@ phone app, etc. without touching the firmware).
   Speaker (buzzer)    On GPIO 26, driven by a PWM "tone" channel for alarm sounds.
 
 WHY THESE PINS MATTER (one gotcha worth knowing): the ESP32 has two ADC blocks,
-ADC1 and ADC2. ADC2 STOPS WORKING when WiFi is on. That is why the joystick uses
-pins 32 and 35 (both ADC1) - an early version used an ADC2 pin and the joystick
-went dead the moment WiFi connected.
+ADC1 and ADC2. ADC2 is shared with the radio and becomes unreliable when WiFi is
+active. The joystick therefore uses pins 32 and 35 (both ADC1) - an early WiFi
+version used an ADC2 pin and the joystick went dead the moment WiFi connected. We
+keep it on ADC1, which is safe regardless of which radio is running.
 
 
 ================================================================================
@@ -125,20 +125,20 @@ cleaning up that wavy line and counting the bumps reliably.
 
 The firmware is C++ built with PlatformIO (Arduino framework). After the cleanup
 it is split into small files under Firmware/src/happynappy/:
-  config.h     - all the pins, WiFi/MQTT settings, and timing constants
+  config.h     - all the pins, the Bluetooth name, and timing constants
   feedback.*   - vibration motor + speaker
   inputs.*     - reads the joystick, turns it into Up/Down/Left/Right "Button"s
   app_state.*  - the menu/alarm state (which screen, alarm time, etc.)
   display_ui.* - draws each screen on the OLED
   menu.*       - reacts to button presses (menu navigation)
-  network.*    - WiFi + MQTT (sending data, receiving wake commands)
+  bluetooth.*  - Bluetooth SPP (sending data, receiving wake commands)
 integrated.cpp - ties it together: setup() once, then loop() forever.
 
 THE SENSING LOOP (the important part for the demo):
   - It reads the IR sensor 50 times per second (50 Hz; one sample every 20 ms).
   - It collects 500 samples = a 10-second "window" of the pulse waveform.
   - When a window is full, it packs the 500 numbers into a small text message
-    (JSON) and PUBLISHES it over MQTT to the topic "sensors/max30102/data".
+    (JSON) and SENDS it over Bluetooth as one line of text.
   - Then it starts the next window. (In practice a window takes ~13 s of real
     time because of overhead, so a new message goes out roughly every 13 s.)
 
@@ -155,34 +155,43 @@ joystick, and LISTENS for two commands coming back from the backend (Section 11)
 
 
 ================================================================================
- 6. MQTT (how the pieces talk)
+ 6. BLUETOOTH SPP (how the pieces talk)
 ================================================================================
 
-MQTT is a lightweight "publish/subscribe" messaging system designed for small
-devices. Three roles:
+The pillow and the laptop talk over BLUETOOTH CLASSIC using the SERIAL PORT
+PROFILE (SPP). The easiest way to picture SPP: it is a WIRELESS SERIAL CABLE.
+Anything one side "prints" comes out the other side as bytes, in order - exactly
+like a USB serial connection, but over the air.
 
-  PUBLISHER   sends a message to a named "topic" (like a radio channel).
-  SUBSCRIBER  asks to receive everything sent to a topic.
-  BROKER      the central server that routes messages from publishers to whoever
-              subscribed. Publishers and subscribers never talk directly; they
-              only ever talk to the broker.
+How it comes together:
+  - The firmware starts Bluetooth with a name: SerialBT.begin("HappyNappy"). The
+    device is now discoverable.
+  - You PAIR the laptop with "HappyNappy" once. Windows then creates a virtual
+    COM PORT for it (e.g. COM5) - a fake serial port that is really the Bluetooth
+    link underneath.
+  - The backend opens that COM port (with the pyserial library) and reads/writes
+    it like any serial port.
 
-We use "mosquitto" as the broker, running on the laptop, listening on TCP port
-1883.
+The protocol on the wire is just LINES OF TEXT:
+  pillow -> laptop : one window per line,
+                     {"ir":[...500...],"sample_rate":50}\n
+  laptop -> pillow : one command per line,
+                     WAKE_UP\n        (buzz the motor)
+                     STOP_SAMPLING\n  (stop streaming once the user is awake)
+The newline at the end of each line is the "frame" marker - it tells the reader
+where one message ends and the next begins.
 
-Our topics:
-  sensors/max30102/data   ESP32 PUBLISHES pulse windows; BACKEND SUBSCRIBES.
-  esp32/wake_alert        BACKEND publishes "WAKE_UP"; ESP32 subscribes (buzz!).
-  esp32/control           BACKEND publishes "STOP_SAMPLING"; ESP32 subscribes.
+Why Bluetooth/SPP instead of WiFi+MQTT (what we used before)? Because for a single
+pillow talking to a single laptop, a direct wireless serial link is far simpler:
+no router, no broker to install/start, no IP addresses to chase, and no shared
+network for things to go wrong on. SPP also handles our ~3 KB windows with no
+special effort - it is a byte stream, so the 500-number line just flows across and
+the receiver reassembles it. (BLE, the other Bluetooth flavor, would have forced
+us to chop each window into tiny chunks - more code, more bugs.)
 
-Why MQTT instead of, say, a web request? Because it is built for exactly this:
-many small messages, devices that come and go, low overhead, and easy one-to-many
-delivery. It also decouples everyone - the ESP32 doesn't need to know the backend
-exists, only the broker's address.
-
-"QoS 0" (which we use) means "fire and forget" - the broker delivers the message
-to current subscribers once, with no re-send guarantee. Fine for a stream of
-pulse data where the next window is seconds away anyway.
+The trade-off we accept: SPP is point-to-point (one pillow, one paired laptop)
+rather than the one-to-many that MQTT gives. For this product that is exactly what
+we want.
 
 
 ================================================================================
@@ -190,28 +199,32 @@ pulse data where the next window is seconds away anyway.
 ================================================================================
 
 The backend is Python. It does two jobs at once:
-  (a) it is an MQTT client (using the "fastapi-mqtt" library) that receives sensor
-      windows and analyzes them, and
+  (a) it READS THE BLUETOOTH SERIAL PORT (using the "pyserial" library) on a
+      background thread, receiving sensor windows and analyzing them, and
   (b) it is a small web server (using "FastAPI" + "uvicorn") that the dashboard
       can query over HTTP.
 
 After the cleanup it is split into:
-  config.py        - constants (broker address, topics, thresholds) + a fix that
-                     forces UTF-8 console output (see the debugging story)
+  config.py        - constants (serial port, thresholds) + a fix that forces UTF-8
+                     console output (see the debugging story)
   processing.py    - pure functions: a raw IR window -> a BPM number (uses HeartPy)
   sleep_tracker.py - the SleepTracker class: stores BPM history, computes a resting
                      baseline, and decides when to wake the sleeper
-  api_server.py    - the glue: receive MQTT message -> process -> store -> maybe
-                     send a wake alert; plus the HTTP endpoints
+  api_server.py    - the glue: read a line from the serial port -> process -> store
+                     -> maybe send a wake alert; plus the HTTP endpoints
 
-WHAT HAPPENS WHEN A WINDOW ARRIVES (on_message):
-  1. Parse the JSON, pull out the 500 IR samples and the sample rate.
+WHAT HAPPENS WHEN A WINDOW ARRIVES (process_window):
+  1. Parse the JSON line, pull out the 500 IR samples and the sample rate.
   2. CONTACT CHECK: average the IR values. If the average is below 900, the finger
      isn't really on the sensor, so skip analysis ("Poor contact").
   3. Otherwise, hand the samples to HeartPy to get a BPM (Section 8).
   4. Store the BPM (with a timestamp) in the history list.
-  5. Run sleep-stage detection (Section 9). If it decides to wake the user, publish
-     the wake commands back to the ESP32.
+  5. Run sleep-stage detection (Section 9). If it decides to wake the user, write
+     the wake commands back over the serial link to the ESP32.
+
+(The serial port is read on a background thread so the web server stays responsive.
+A lock guards the shared BPM history so the reader thread and the HTTP handlers
+never step on each other.)
 
 THE HTTP ENDPOINTS (what the dashboard / you can ask for):
   GET  /              status: is data flowing? how many packets? current stage?
@@ -269,8 +282,8 @@ The algorithm (in sleep_tracker.py) is deliberately simple and explainable:
   2. WATCH FOR A DROP relative to that baseline:
        - BPM down 10-20%  -> "falling asleep"
        - BPM down 20%+    -> "deep sleep" -> WAKE THE USER NOW
-  3. To wake: publish "WAKE_UP" on esp32/wake_alert (buzz) and "STOP_SAMPLING" on
-     esp32/control (the pillow stops streaming once you're awake).
+  3. To wake: send the line "WAKE_UP" over the Bluetooth link (buzz) followed by
+     "STOP_SAMPLING" (the pillow stops streaming once you're awake).
 
 DEMO REALITY CHECK (be honest about this in the talk): the baseline needs ~13
 minutes, so the automatic wake won't fire during a short demo. That is exactly
@@ -309,15 +322,16 @@ stopped the graph from flickering. (See the debugging story.)
 This is the part that makes it a SYSTEM and not just a monitor:
 
   backend decides to wake you
-     -> publishes "WAKE_UP"      to esp32/wake_alert
-     -> publishes "STOP_SAMPLING" to esp32/control
-  ESP32 (subscribed to both) receives them in its mqttCallback():
+     -> writes the line "WAKE_UP"       over the Bluetooth link
+     -> writes the line "STOP_SAMPLING" over the Bluetooth link
+  ESP32 reads them in bluetoothPoll() -> handleCommand():
      -> "WAKE_UP"       -> buzzMotor(): switch the OLED to the ALARM screen and
                            start the vibration pattern
-     -> "STOP_SAMPLING" -> set a flag so the loop stops collecting/publishing data
+     -> "STOP_SAMPLING" -> set a flag so the loop stops collecting/sending data
 
-So data flows up (pillow -> laptop) AND commands flow down (laptop -> pillow). The
-manual demo trigger (POST /wake_alert) injects the exact same "WAKE_UP" message.
+So data flows up (pillow -> laptop) AND commands flow down (laptop -> pillow), all
+over the same Bluetooth serial link. The manual demo trigger (POST /wake_alert)
+injects the exact same "WAKE_UP" message.
 
 
 ================================================================================
@@ -326,17 +340,16 @@ manual demo trigger (POST /wake_alert) injects the exact same "WAKE_UP" message.
 
   1. Blood pulses in your finger; the MAX30102 sees less reflected IR light.
   2. The ESP32 records that as one of 500 samples in the current 10-second window.
-  3. Window full -> ESP32 publishes {"ir":[...500...],"sample_rate":50} to the
-     topic sensors/max30102/data.
-  4. The mosquitto broker (laptop:1883) receives it and forwards it to the backend,
-     which is subscribed to that topic.
+  3. Window full -> ESP32 sends {"ir":[...500...],"sample_rate":50} as one line
+     over the Bluetooth serial link.
+  4. The backend's serial-reader thread reads that line from the virtual COM port.
   5. Backend checks contact (avg IR >= 900), then HeartPy filters the wave and
      counts the beats -> e.g. 72.4 BPM.
   6. Backend stores {time, bpm} and checks it against the resting baseline.
   7. Dashboard polls GET /bpm_history every 2 s and the new point appears on the
      chart; "Current BPM" reads 72.4.
   8. If the baseline says you've dropped into deep sleep (or you POST /wake_alert),
-     the backend publishes WAKE_UP -> the broker -> the ESP32 -> the motor buzzes.
+     the backend writes WAKE_UP over the link -> the ESP32 -> the motor buzzes.
 
 
 ================================================================================
@@ -345,6 +358,8 @@ manual demo trigger (POST /wake_alert) injects the exact same "WAKE_UP" message.
 
 This is a great "engineering process" story to tell. Each problem was a different
 layer of the system, and the symptoms were misleading - which is the fun part.
+Problems 1-3 below all happened in the WiFi+MQTT era; they are exactly why we
+ultimately moved to Bluetooth (see "THE BLUETOOTH MIGRATION" at the end).
 
 PROBLEM 1: "The OLED screen is blank."
   Symptom: after changing WiFi networks, the pillow's screen showed nothing.
@@ -383,9 +398,23 @@ PROBLEM 4: "The dashboard graph keeps flashing."
   chart a stable identity so it updates in place, and only rebuild it when the
   data actually changed (new data only comes every ~13 s anyway).
 
+THE BLUETOOTH MIGRATION (the design decision that retired three of these bugs):
+  Notice that Problems 1, 2, and 3 were ALL network problems - WiFi credentials,
+  broker binding, broker IP, and a crash in the broker-connect handler. The
+  network was the single most fragile part of the whole system, and the riskiest
+  thing to depend on at a live presentation (what if there's no router?).
+  So we replaced the entire WiFi + MQTT + mosquitto path with a direct Bluetooth
+  (SPP) serial link between the pillow and the laptop. The firmware's network.*
+  module became bluetooth.*; the backend's MQTT client became a pyserial reader.
+  Nothing else changed - same JSON windows, same HeartPy analysis, same dashboard.
+  The payoff: no router, no broker to install or start, no IP addresses, and an
+  entire category of failures (Problems 1-3) simply cannot happen anymore. This is
+  a strong point to make in the talk: we didn't just fix the network bugs, we
+  engineered the network out of the problem.
+
 CLEANUP PASSES (good to mention as "we made it maintainable"):
   - Split the ~250-line backend file and the ~1000-line firmware file into small,
-    single-purpose modules (config / processing / sleep logic / display / network).
+    single-purpose modules (config / processing / sleep logic / display / link).
   - Verified the firmware refactor compiled to an essentially identical binary -
     proof we reorganized without changing behavior.
   - Removed all the debug emojis from the code so logs are plain ASCII.
@@ -393,7 +422,8 @@ CLEANUP PASSES (good to mention as "we made it maintainable"):
 THE MORAL FOR THE TALK: every bug was in a DIFFERENT layer (firmware startup,
 network config, broker binding, text encoding, UI rendering), and the symptom
 almost never pointed at the real cause. We debugged by testing each link in the
-chain in isolation until we found the break.
+chain in isolation until we found the break - and where a whole layer kept causing
+trouble (the network), we removed it.
 
 
 ================================================================================
@@ -410,34 +440,38 @@ KEY NUMBERS
   "Deep sleep" (wake!) ..... BPM down 20%+ from baseline
 
 PORTS
-  1883 ... mosquitto MQTT broker
   8000 ... backend (FastAPI) HTTP API
   8501 ... Streamlit dashboard
+  (no broker port anymore - the pillow link is a Bluetooth virtual COM port)
 
-MQTT TOPICS
-  sensors/max30102/data ... pillow -> backend (pulse windows)
-  esp32/wake_alert ........ backend -> pillow ("WAKE_UP")
-  esp32/control ........... backend -> pillow ("STOP_SAMPLING")
+THE BLUETOOTH LINK
+  Device name ............. "HappyNappy" (set in config.h: kBtName)
+  Laptop side ............. a virtual COM port created when you pair (e.g. COM5);
+                            the backend reads it via HAPPYNAPPY_PORT / config.py
+  pillow -> backend ....... {"ir":[...500...],"sample_rate":50}  (one line/window)
+  backend -> pillow ....... "WAKE_UP" (buzz) and "STOP_SAMPLING" (stop streaming)
 
 WHO DOES WHAT
   ESP32 firmware (C++) ..... sample the sensor, ship raw data, run clock/menu/motor
-  mosquitto (broker) ....... routes MQTT messages between pillow and backend
+  Bluetooth SPP ............ the wireless "serial cable" between pillow and laptop
   backend (Python/FastAPI) . HeartPy analysis + sleep logic + HTTP API
   HeartPy (library) ........ filters the wave and computes BPM
   dashboard (Streamlit) .... shows live BPM + chart in a browser
 
 KEY FILES
-  Firmware/src/happynappy/config.h ... WiFi name/password + broker IP (edit here)
-  Firmware/src/integrated.cpp ........ firmware main loop
-  backend/api_server.py .............. backend entry point
-  backend/sleep_tracker.py ........... the wake-detection logic
-  backend/streamlit_dashboard.py ..... the dashboard
+  Firmware/src/happynappy/config.h ...... Bluetooth name + pins/timing (edit here)
+  Firmware/src/happynappy/bluetooth.cpp . the Bluetooth serial link
+  Firmware/src/integrated.cpp ........... firmware main loop
+  backend/config.py ..................... SERIAL_PORT / HAPPYNAPPY_PORT lives here
+  backend/api_server.py ................. backend entry point (serial reader + API)
+  backend/sleep_tracker.py .............. the wake-detection logic
+  backend/streamlit_dashboard.py ........ the dashboard
 
 ONE-LINE TECH SUMMARY (say this if asked "how does it work?"):
   "An ESP32 in the pillow samples an optical pulse sensor at 50 Hz and streams
-   10-second windows over MQTT to a laptop; a Python backend uses HeartPy to turn
-   each window into a heart rate, watches for the drop that signals deeper sleep,
-   and sends a wake command back to buzz the pillow - all shown live on a
+   10-second windows over Bluetooth to a laptop; a Python backend uses HeartPy to
+   turn each window into a heart rate, watches for the drop that signals deeper
+   sleep, and sends a wake command back to buzz the pillow - all shown live on a
    Streamlit dashboard."
 
 
@@ -448,12 +482,15 @@ ONE-LINE TECH SUMMARY (say this if asked "how does it work?"):
 Q: Why send raw data to a laptop instead of computing the heart rate on the chip?
 A: The ESP32 is a tiny microcontroller; heavy signal processing is easier, faster,
    and more accurate in Python on a laptop. It also means we can improve the
-   analysis without re-flashing the hardware. Trade-off: it needs a network link.
+   analysis without re-flashing the hardware. Trade-off: it needs a wireless link.
 
-Q: Why MQTT and not just a normal web request?
-A: MQTT is built for streams of small messages from devices that come and go. It
-   decouples the pillow from the analysis software (they only know the broker),
-   and makes one-to-many delivery trivial.
+Q: Why Bluetooth instead of WiFi?
+A: For one pillow talking to one laptop, Bluetooth SPP is a direct wireless serial
+   link - no router, no broker to install or start, no IP addresses. Our earlier
+   WiFi+MQTT version had repeated network failures (wrong creds, broker binding,
+   wrong IP); Bluetooth removes that whole layer, which is much safer for a live
+   demo. We used Classic SPP (not BLE) because it streams our ~3 KB windows as-is
+   without having to chop them into tiny BLE packets.
 
 Q: How does the sensor actually detect a pulse?
 A: It shines infrared light into the finger and measures how much reflects back.
@@ -478,6 +515,6 @@ A: A "success" log message with an emoji in it crashed the backend's connect
    to test each link in the chain separately. (See Section 13.)
 
 Q: What would you improve next?
-A: (1) WiFi setup without re-flashing (a phone captive portal). (2) A higher
-   sample rate + HRV features for better sleep staging. (3) A trained model using
-   real labeled sleep data. (4) On-board battery so it's fully wireless.
+A: (1) A higher sample rate + HRV features for better sleep staging. (2) A trained
+   model using real labeled sleep data. (3) On-board battery so it's fully wireless
+   (the data link already is). (4) A phone app that pairs with the pillow directly.

@@ -1,3 +1,10 @@
+================================================================================
+ >>> NOT NEEDED FOR THE CURRENT PROJECT <<<
+ This describes the LEGACY standalone build (no network at all). The live product
+ is the "integrated" Bluetooth firmware. Kept only as a no-network reference /
+ demo fallback; it is NOT used by the current system.
+================================================================================
+
 FILE: main.cpp
 BUILD: compiled by the "esp32dev" PlatformIO environment.
        LEGACY / ALTERNATE BUILD - this is NOT the demo firmware.
